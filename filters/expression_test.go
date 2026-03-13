@@ -114,6 +114,21 @@ func TestFormatTree(t *testing.T) {
 	}
 }
 
+func TestParseFilterExpression_SuffixOrDoesNotMatchInvalidDNSPayload(t *testing.T) {
+	node, err := ParseFilterExpression("suffix=nhncorp.com. or suffix=nfra.io. or suffix=dev.ui.naver.com.")
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+
+	msg := dnstap.Message{
+		QueryAddress: net.ParseIP("1.1.1.1").To4(),
+		QueryMessage: nil,
+	}
+	if node.Eval(msg) {
+		t.Fatalf("expected false for invalid DNS payload, got true")
+	}
+}
+
 func newQueryMessage(t *testing.T, name string, ip string) dnstap.Message {
 	t.Helper()
 

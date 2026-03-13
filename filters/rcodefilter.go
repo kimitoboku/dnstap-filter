@@ -22,7 +22,7 @@ func (p *RcodeFilter) Filter(m dnstap.Message) bool {
 		msg := new(dns.Msg)
 		err := msg.Unpack(m.ResponseMessage)
 		if err != nil {
-			return true
+			return false
 		}
 
 		rcode := dns.RcodeToString[msg.Rcode]

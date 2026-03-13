@@ -20,12 +20,12 @@ func (p *FQDNFilter) Filter(m dnstap.Message) bool {
 	if m.QueryAddress != nil {
 		err := msg.Unpack(m.QueryMessage)
 		if err != nil {
-			return true
+			return false
 		}
 	} else if m.ResponseAddress != nil {
 		err := msg.Unpack(m.ResponseMessage)
 		if err != nil {
-			return true
+			return false
 		}
 	} else {
 		return false
