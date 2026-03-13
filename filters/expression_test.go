@@ -93,6 +93,27 @@ func TestParseFilterExpression_AllPredicates(t *testing.T) {
 	}
 }
 
+func TestFormatTree(t *testing.T) {
+	node, err := ParseFilterExpression("ip=1.1.1.1 and (suffix=example.com. or rcode=NXDOMAIN)")
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+
+	got := FormatTree(node)
+	wantContains := []string{
+		"AND",
+		"PREDICATE ip=1.1.1.1",
+		"OR",
+		"PREDICATE suffix=example.com.",
+		"PREDICATE rcode=NXDOMAIN",
+	}
+	for _, w := range wantContains {
+		if !strings.Contains(got, w) {
+			t.Fatalf("expected tree to contain %q, got:\n%s", w, got)
+		}
+	}
+}
+
 func newQueryMessage(t *testing.T, name string, ip string) dnstap.Message {
 	t.Helper()
 

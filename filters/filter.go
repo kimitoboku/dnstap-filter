@@ -1,6 +1,9 @@
 package filters
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/dnstap/golang-dnstap"
 )
 
@@ -14,6 +17,8 @@ type Node interface {
 
 type PredicateNode struct {
 	Filter DnstapFilterFunc
+	Key    string
+	Value  string
 }
 
 func (n *PredicateNode) Eval(msg dnstap.Message) bool {
@@ -45,4 +50,32 @@ func (n *OrNode) Eval(msg dnstap.Message) bool {
 		return false
 	}
 	return n.Left.Eval(msg) || n.Right.Eval(msg)
+}
+
+func FormatTree(root Node) string {
+	return formatTree(root, 0)
+}
+
+func formatTree(node Node, depth int) string {
+	if node == nil {
+		return indent(depth) + "<nil>"
+	}
+
+	switch n := node.(type) {
+	case *PredicateNode:
+		if n.Key != "" {
+			return indent(depth) + fmt.Sprintf("PREDICATE %s=%s", n.Key, n.Value)
+		}
+		return indent(depth) + "PREDICATE"
+	case *AndNode:
+		return indent(depth) + "AND\n" + formatTree(n.Left, depth+1) + "\n" + formatTree(n.Right, depth+1)
+	case *OrNode:
+		return indent(depth) + "OR\n" + formatTree(n.Left, depth+1) + "\n" + formatTree(n.Right, depth+1)
+	default:
+		return indent(depth) + fmt.Sprintf("UNKNOWN %T", node)
+	}
+}
+
+func indent(depth int) string {
+	return strings.Repeat("  ", depth)
 }

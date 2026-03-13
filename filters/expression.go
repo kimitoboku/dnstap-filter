@@ -179,13 +179,13 @@ func parsePredicate(tok token) (Node, error) {
 		if f.IP == nil {
 			return nil, fmt.Errorf("token %d at char %d ('%s'): invalid ip value", tok.index, tok.pos, tok.lit)
 		}
-		return &PredicateNode{Filter: f}, nil
+		return &PredicateNode{Filter: f, Key: key, Value: value}, nil
 	case "fqdn":
-		return &PredicateNode{Filter: NewFQDNFilter(value)}, nil
+		return &PredicateNode{Filter: NewFQDNFilter(value), Key: key, Value: value}, nil
 	case "suffix":
-		return &PredicateNode{Filter: NewSuffixFilter(value)}, nil
+		return &PredicateNode{Filter: NewSuffixFilter(value), Key: key, Value: value}, nil
 	case "rcode":
-		return &PredicateNode{Filter: NewRcodeFilter(value)}, nil
+		return &PredicateNode{Filter: NewRcodeFilter(value), Key: key, Value: value}, nil
 	default:
 		return nil, fmt.Errorf("token %d at char %d ('%s'): unknown predicate key '%s'", tok.index, tok.pos, tok.lit, key)
 	}

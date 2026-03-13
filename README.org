@@ -17,6 +17,10 @@ Required flags:
 - ~--out~: output dnstap file
 - ~--filter~: filter expression
 
+Optional flags:
+- ~--print-filter-tree~: print the parsed filter tree and exit (in this mode, ~--in~ and ~--out~ are not required)
+- ~--cout~, ~-c~: process only the first N records from the beginning of input
+
 ** Filter expression
 
 Supported predicates:
@@ -46,6 +50,12 @@ Operator precedence is ~and~ higher than ~or~, and parentheses can override prec
 
 # 4) Use parentheses to control precedence
 ./dnstap-filter --in input.dnstap --out out4.dnstap --filter "(ip=1.1.1.1 or ip=8.8.8.8) and fqdn=www.example.com."
+
+# 5) Print filter tree only
+./dnstap-filter --filter "ip=1.1.1.1 and (suffix=example.com. or rcode=NXDOMAIN)" --print-filter-tree
+
+# 6) Process only first 100 records
+./dnstap-filter --in input.dnstap --out out5.dnstap --filter "suffix=example.com." --cout 100
 #+end_src
 
 ** Notes
