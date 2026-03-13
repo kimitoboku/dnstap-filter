@@ -1,6 +1,8 @@
 package main
 
 import (
+	"errors"
+	"flag"
 	"fmt"
 	"os"
 
@@ -10,7 +12,38 @@ import (
 	"github.com/kimitoboku/dnstap-filter/filters"
 )
 
-func dnstapFilter(outputChannel chan []byte, filterList []filters.DnstapFilterFunc) chan []byte {
+type cliConfig struct {
+	inputFileName  string
+	outputFileName string
+	filterExpr     string
+}
+
+func parseCLIArgs(args []string) (cliConfig, error) {
+	fs := flag.NewFlagSet("dnstap-filter", flag.ContinueOnError)
+	fs.SetOutput(os.Stderr)
+
+	in := fs.String("in", "", "input dnstap file")
+	out := fs.String("out", "", "output dnstap file")
+	filterExpr := fs.String("filter", "", "filter expression, e.g. 'ip=1.1.1.1 and (suffix=example.com. or rcode=NXDOMAIN)'")
+
+	if err := fs.Parse(args); err != nil {
+		return cliConfig{}, err
+	}
+	if fs.NArg() > 0 {
+		return cliConfig{}, fmt.Errorf("unexpected positional arguments: %v", fs.Args())
+	}
+	if *in == "" || *out == "" || *filterExpr == "" {
+		return cliConfig{}, errors.New("required flags: --in, --out, --filter")
+	}
+
+	return cliConfig{
+		inputFileName:  *in,
+		outputFileName: *out,
+		filterExpr:     *filterExpr,
+	}, nil
+}
+
+func dnstapFilter(outputChannel chan []byte, root filters.Node) chan []byte {
 	inputChannel := make(chan []byte, 32)
 	go func() {
 		dt := &dnstap.Dnstap{}
@@ -19,17 +52,8 @@ func dnstapFilter(outputChannel chan []byte, filterList []filters.DnstapFilterFu
 				fmt.Printf("dnstap.TextOutput: proto.Unmarshal() failed: %s, returning", err)
 				break
 			}
-			if *dt.Type == dnstap.Dnstap_MESSAGE {
-				m := dt.Message
-
-				drop := false
-				for _, filter := range filterList {
-					check := filter.Filter(*m)
-					if !check {
-						drop = true
-					}
-				}
-				if drop {
+			if dt.Type != nil && *dt.Type == dnstap.Dnstap_MESSAGE && dt.Message != nil {
+				if !root.Eval(*dt.Message) {
 					continue
 				}
 			}
@@ -40,30 +64,39 @@ func dnstapFilter(outputChannel chan []byte, filterList []filters.DnstapFilterFu
 	return inputChannel
 }
 
-func main() {
-	inputFileName := os.Args[1]
-	outputFileName := os.Args[2]
-	filterIP := os.Args[3]
-	i, err := dnstap.NewFrameStreamInputFromFilename(inputFileName)
+func run(args []string) error {
+	cfg, err := parseCLIArgs(args)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "dnstap: Failed to open input file %s: %v\n", inputFileName, err)
+		return err
 	}
 
-	o, err := newFileOutput(outputFileName)
+	root, err := filters.ParseFilterExpression(cfg.filterExpr)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "dnstap: File output error on '%s': %v\n",
-			outputFileName, err)
-		os.Exit(1)
+		return fmt.Errorf("invalid filter expression: %w", err)
+	}
+
+	i, err := dnstap.NewFrameStreamInputFromFilename(cfg.inputFileName)
+	if err != nil {
+		return fmt.Errorf("dnstap: failed to open input file %s: %v", cfg.inputFileName, err)
+	}
+
+	o, err := newFileOutput(cfg.outputFileName)
+	if err != nil {
+		return fmt.Errorf("dnstap: file output error on '%s': %v", cfg.outputFileName, err)
 	}
 	go o.RunOutputLoop()
 	outputChannel := o.GetOutputChannel()
 
-	var filterList []filters.DnstapFilterFunc
-	ipFilter := filters.NewIPFilter(filterIP)
-	filterList = append(filterList, ipFilter)
-
-	inputChannel := dnstapFilter(outputChannel, filterList)
+	inputChannel := dnstapFilter(outputChannel, root)
 	go i.ReadInto(inputChannel)
-
 	i.Wait()
+
+	return nil
+}
+
+func main() {
+	if err := run(os.Args[1:]); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		os.Exit(1)
+	}
 }

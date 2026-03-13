@@ -16,24 +16,25 @@ func NewFQDNFilter(a string) *FQDNFilter {
 }
 
 func (p *FQDNFilter) Filter(m dnstap.Message) bool {
-	var msg dns.Msg
+	msg := new(dns.Msg)
 	if m.QueryAddress != nil {
-		msg := new(dns.Msg)
 		err := msg.Unpack(m.QueryMessage)
 		if err != nil {
 			return true
 		}
-	}
-
-	if m.ResponseAddress != nil {
-		msg := new(dns.Msg)
+	} else if m.ResponseAddress != nil {
 		err := msg.Unpack(m.ResponseMessage)
 		if err != nil {
 			return true
 		}
+	} else {
+		return false
+	}
+
+	if len(msg.Question) == 0 {
+		return false
 	}
 
 	questionName := msg.Question[0].Name
-
 	return p.FQDN == questionName
 }

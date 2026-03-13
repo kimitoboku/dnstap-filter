@@ -1,1 +1,55 @@
 * dnstap-filter
+
+A tool to filter records from a dnstap file and write matched records to another file.
+
+** Usage
+
+#+begin_src sh
+# Build
+make build
+
+# Run
+./dnstap-filter --in input.dnstap --out output.dnstap --filter "ip=1.1.1.1"
+#+end_src
+
+Required flags:
+- ~--in~: input dnstap file
+- ~--out~: output dnstap file
+- ~--filter~: filter expression
+
+** Filter expression
+
+Supported predicates:
+- ~ip=<addr>~
+- ~fqdn=<name>~
+- ~suffix=<suffix>~
+- ~rcode=<rcode>~
+
+Supported logical operators:
+- ~and~
+- ~or~
+- ~(...)~ (grouping)
+
+Operator precedence is ~and~ higher than ~or~, and parentheses can override precedence.
+
+** Examples
+
+#+begin_src sh
+# 1) Single condition
+./dnstap-filter --in input.dnstap --out out1.dnstap --filter "ip=1.1.1.1"
+
+# 2) AND condition
+./dnstap-filter --in input.dnstap --out out2.dnstap --filter "ip=1.1.1.1 and suffix=example.com."
+
+# 3) OR condition
+./dnstap-filter --in input.dnstap --out out3.dnstap --filter "rcode=NXDOMAIN or rcode=SERVFAIL"
+
+# 4) Use parentheses to control precedence
+./dnstap-filter --in input.dnstap --out out4.dnstap --filter "(ip=1.1.1.1 or ip=8.8.8.8) and fqdn=www.example.com."
+#+end_src
+
+** Notes
+
+- The program exits with an error at startup if the filter expression is invalid.
+- ~and~ / ~or~ operators are case-insensitive.
+- The legacy positional-argument CLI (~input output ip~) has been removed.
