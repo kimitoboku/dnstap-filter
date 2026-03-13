@@ -13,7 +13,7 @@ help:
 	@echo "  make clean  - remove built binary"
 
 build:
-	go build -o $(APP) .
+	go build -o $(APP) ./cmd/$(APP)
 
 test:
 	go test $(PKGS)

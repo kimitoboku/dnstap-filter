@@ -1,4 +1,4 @@
-package filters
+package expression
 
 import (
 	"net"
@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/dnstap/golang-dnstap"
+	"github.com/kimitoboku/dnstap-filter/internal/filter"
 	"github.com/miekg/dns"
 )
 
@@ -99,7 +100,7 @@ func TestFormatTree(t *testing.T) {
 		t.Fatalf("unexpected parse error: %v", err)
 	}
 
-	got := FormatTree(node)
+	got := filter.FormatTree(node)
 	wantContains := []string{
 		"AND",
 		"PREDICATE ip=1.1.1.1",

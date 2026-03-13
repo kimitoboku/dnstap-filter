@@ -1,10 +1,10 @@
-package filters
+package filter
 
 import (
+	"strings"
+
 	"github.com/dnstap/golang-dnstap"
 	"github.com/miekg/dns"
-
-	"strings"
 )
 
 type RcodeFilter struct {
@@ -27,7 +27,6 @@ func (p *RcodeFilter) Filter(m dnstap.Message) bool {
 
 		rcode := dns.RcodeToString[msg.Rcode]
 		return p.Rcode == rcode
-
 	} else {
 		return false
 	}

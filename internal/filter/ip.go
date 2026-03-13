@@ -1,8 +1,9 @@
-package filters
+package filter
 
 import (
-	"github.com/dnstap/golang-dnstap"
 	"net"
+
+	"github.com/dnstap/golang-dnstap"
 )
 
 type IPFilter struct {

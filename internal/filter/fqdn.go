@@ -1,23 +1,21 @@
-package filters
+package filter
 
 import (
-	"strings"
-
 	"github.com/dnstap/golang-dnstap"
 	"github.com/miekg/dns"
 )
 
-type SuffixFilter struct {
-	Suffix string
+type FQDNFilter struct {
+	FQDN string
 }
 
-func NewSuffixFilter(a string) *SuffixFilter {
-	return &SuffixFilter{
-		Suffix: a,
+func NewFQDNFilter(a string) *FQDNFilter {
+	return &FQDNFilter{
+		FQDN: a,
 	}
 }
 
-func (p *SuffixFilter) Filter(m dnstap.Message) bool {
+func (p *FQDNFilter) Filter(m dnstap.Message) bool {
 	msg := new(dns.Msg)
 	if m.QueryAddress != nil {
 		err := msg.Unpack(m.QueryMessage)
@@ -38,5 +36,5 @@ func (p *SuffixFilter) Filter(m dnstap.Message) bool {
 	}
 
 	questionName := msg.Question[0].Name
-	return strings.HasSuffix(questionName, p.Suffix)
+	return p.FQDN == questionName
 }
