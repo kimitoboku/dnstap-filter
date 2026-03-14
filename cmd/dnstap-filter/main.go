@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -40,14 +39,11 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 	if fs.NArg() > 0 {
 		return cliConfig{}, fmt.Errorf("unexpected positional arguments: %v", fs.Args())
 	}
-	if *filterExpr == "" {
-		return cliConfig{}, errors.New("required flag: --filter")
-	}
 	if countLimit < 0 {
-		return cliConfig{}, errors.New("flag --cout/-c must be >= 0")
+		return cliConfig{}, fmt.Errorf("flag --cout/-c must be >= 0")
 	}
 	if !*printFilterTree && *in == "" {
-		return cliConfig{}, errors.New("required flag: --in (or use --print-filter-tree)")
+		return cliConfig{}, fmt.Errorf("required flag: --in (or use --print-filter-tree)")
 	}
 
 	return cliConfig{

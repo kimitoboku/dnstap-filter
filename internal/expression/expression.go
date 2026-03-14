@@ -36,7 +36,7 @@ func ParseFilterExpression(expr string) (filter.Node, error) {
 		return nil, err
 	}
 	if len(tokens) == 0 {
-		return nil, fmt.Errorf("token 0: empty expression")
+		return &filter.MatchAllNode{}, nil
 	}
 
 	p := &parser{tokens: tokens}

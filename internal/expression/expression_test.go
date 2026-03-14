@@ -54,9 +54,19 @@ func TestParseFilterExpression_CaseInsensitiveOperators(t *testing.T) {
 	}
 }
 
+func TestParseFilterExpression_EmptyMatchesAll(t *testing.T) {
+	node, err := ParseFilterExpression("")
+	if err != nil {
+		t.Fatalf("unexpected error for empty expression: %v", err)
+	}
+	msg := newQueryMessage(t, "www.example.com.", "1.1.1.1")
+	if !node.Eval(msg) {
+		t.Fatalf("expected empty expression to match all messages")
+	}
+}
+
 func TestParseFilterExpression_Errors(t *testing.T) {
 	cases := []string{
-		"",
 		"(",
 		"foo=bar",
 		"ip=",
