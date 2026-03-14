@@ -18,16 +18,9 @@ func NewIPFilter(a string) *IPFilter {
 }
 
 func (p *IPFilter) Filter(m dnstap.Message) bool {
-	var ip net.IP
-	if m.QueryAddress != nil {
-		queryAddress := m.GetQueryAddress()
-		ip = net.IP(queryAddress)
+	if m.QueryAddress == nil {
+		return false
 	}
-
-	if m.ResponseAddress != nil {
-		responseAddress := m.GetResponseAddress()
-		ip = net.IP(responseAddress)
-	}
-
-	return p.IP.String() == ip.String()
+	ip := net.IP(m.GetQueryAddress())
+	return p.IP.Equal(ip)
 }

@@ -188,6 +188,30 @@ func parsePredicate(tok token) (filter.Node, error) {
 		return &filter.PredicateNode{Filter: filter.NewSuffixFilter(value), Key: key, Value: value}, nil
 	case "rcode":
 		return &filter.PredicateNode{Filter: filter.NewRcodeFilter(value), Key: key, Value: value}, nil
+	case "subnet":
+		f := filter.NewSubnetFilter(value)
+		if f.Net == nil {
+			return nil, fmt.Errorf("token %d at char %d ('%s'): invalid CIDR value", tok.index, tok.pos, tok.lit)
+		}
+		return &filter.PredicateNode{Filter: f, Key: key, Value: value}, nil
+	case "qtype":
+		f := filter.NewQtypeFilter(value)
+		if f == nil {
+			return nil, fmt.Errorf("token %d at char %d ('%s'): unknown DNS type %q", tok.index, tok.pos, tok.lit, value)
+		}
+		return &filter.PredicateNode{Filter: f, Key: key, Value: value}, nil
+	case "rdata":
+		f, err := filter.NewRdataFilter(value)
+		if err != nil {
+			return nil, fmt.Errorf("token %d at char %d ('%s'): %w", tok.index, tok.pos, tok.lit, err)
+		}
+		return &filter.PredicateNode{Filter: f, Key: key, Value: value}, nil
+	case "msgtype":
+		f := filter.NewMsgTypeFilter(value)
+		if f == nil {
+			return nil, fmt.Errorf("token %d at char %d ('%s'): unknown message type %q", tok.index, tok.pos, tok.lit, value)
+		}
+		return &filter.PredicateNode{Filter: f, Key: key, Value: value}, nil
 	default:
 		return nil, fmt.Errorf("token %d at char %d ('%s'): unknown predicate key '%s'", tok.index, tok.pos, tok.lit, key)
 	}
