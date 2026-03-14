@@ -52,6 +52,12 @@ func (n *OrNode) Eval(msg dnstap.Message) bool {
 	return n.Left.Eval(msg) || n.Right.Eval(msg)
 }
 
+type MatchAllNode struct{}
+
+func (n *MatchAllNode) Eval(_ dnstap.Message) bool {
+	return true
+}
+
 func FormatTree(root Node) string {
 	return formatTree(root, 0)
 }
@@ -71,6 +77,8 @@ func formatTree(node Node, depth int) string {
 		return indent(depth) + "AND\n" + formatTree(n.Left, depth+1) + "\n" + formatTree(n.Right, depth+1)
 	case *OrNode:
 		return indent(depth) + "OR\n" + formatTree(n.Left, depth+1) + "\n" + formatTree(n.Right, depth+1)
+	case *MatchAllNode:
+		return indent(depth) + "MATCH_ALL"
 	default:
 		return indent(depth) + fmt.Sprintf("UNKNOWN %T", node)
 	}

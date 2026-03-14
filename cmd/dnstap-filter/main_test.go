@@ -25,10 +25,13 @@ func TestParseCLIArgs_Success(t *testing.T) {
 	}
 }
 
-func TestParseCLIArgs_RequiredFlags(t *testing.T) {
-	_, err := parseCLIArgs([]string{"--in", "in.dnstap", "--out", "out.dnstap"})
-	if err == nil {
-		t.Fatalf("expected error when --filter is missing")
+func TestParseCLIArgs_FilterOptional(t *testing.T) {
+	cfg, err := parseCLIArgs([]string{"--in", "in.dnstap", "--out", "out.dnstap"})
+	if err != nil {
+		t.Fatalf("unexpected error when --filter is omitted: %v", err)
+	}
+	if cfg.filterExpr != "" {
+		t.Fatalf("expected empty filterExpr, got: %s", cfg.filterExpr)
 	}
 }
 
