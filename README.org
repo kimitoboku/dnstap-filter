@@ -11,7 +11,7 @@ go install github.com/kimitoboku/dnstap-filter/cmd/dnstap-filter@latest
 ** Usage
 
 #+begin_src sh
-dnstap-filter --in <input-spec> [--out <output-spec>] --filter <expression>
+dnstap-filter --in <input-spec> [--out <output-spec>] [--filter <expression>]
 #+end_src
 
 *** Input (~--in~)
@@ -51,10 +51,10 @@ available, they retry every 10 seconds.
 
 Required:
 - ~--in~: input spec (required unless ~--print-filter-tree~ is used)
-- ~--filter~: filter expression
 
 Optional:
 - ~--out~: output spec (default: print query name, type and time to stdout)
+- ~--filter~: filter expression
 - ~--print-filter-tree~: print the parsed filter tree and exit
 - ~--cout~, ~-c~: process only the first N records from the beginning of input
 
