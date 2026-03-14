@@ -60,18 +60,116 @@ Optional:
 
 ** Filter expression
 
-Supported predicates:
-- ~ip=<addr>~
-- ~fqdn=<name>~
-- ~suffix=<suffix>~
-- ~rcode=<rcode>~
+Predicates can be combined with logical operators ~and~, ~or~, and ~(...)~ for grouping.
+Operator precedence: ~and~ binds tighter than ~or~; parentheses override precedence.
+Omitting ~--filter~ matches all messages.
 
-Supported logical operators:
-- ~and~
-- ~or~
-- ~(...)~ (grouping)
+*** Predicates
 
-Operator precedence is ~and~ higher than ~or~, and parentheses can override precedence.
+**** ~ip=<addr>~ — DNS client IP (exact match)
+
+Matches messages where the DNS client IP address equals ~<addr>~.
+Only the client (query source) address is checked.
+
+#+begin_src sh
+--filter "ip=192.168.1.10"
+#+end_src
+
+**** ~subnet=<CIDR>~ — DNS client IP subnet match
+
+Matches messages where the DNS client IP falls within the given CIDR range.
+
+#+begin_src sh
+--filter "subnet=192.168.0.0/24"
+--filter "subnet=10.0.0.0/8"
+#+end_src
+
+**** ~fqdn=<name>~ — Query name exact match
+
+Matches messages whose DNS question name equals ~<name>~ exactly (including the trailing dot).
+
+#+begin_src sh
+--filter "fqdn=www.example.com."
+#+end_src
+
+**** ~suffix=<suffix>~ — Query name suffix match
+
+Matches messages whose DNS question name ends with ~<suffix>~.
+Useful for matching all names under a domain.
+
+#+begin_src sh
+--filter "suffix=example.com."
+#+end_src
+
+**** ~qtype=<type>~ — DNS query type
+
+Matches messages whose DNS question type equals ~<type>~.
+Type names are case-insensitive. Applies to both queries and responses.
+
+#+begin_src sh
+--filter "qtype=AAAA"
+--filter "qtype=MX"
+--filter "qtype=TXT"
+#+end_src
+
+**** ~rcode=<rcode>~ — DNS response code
+
+Matches DNS response messages with the given response code.
+Rcode names are case-insensitive.
+
+#+begin_src sh
+--filter "rcode=NXDOMAIN"
+--filter "rcode=SERVFAIL"
+--filter "rcode=NOERROR"
+#+end_src
+
+**** ~rdata=<value>~ — Response answer record data
+
+Matches DNS response messages based on the data in the Answer section.
+The match mode is determined automatically from ~<value>~:
+
+| Value format | Match type | Target record types |
+|--------------|------------|---------------------|
+| Valid IP address (e.g. ~1.1.1.1~, ~2001:db8::1~) | Exact IP match | A, AAAA |
+| CIDR notation (e.g. ~10.0.0.0/8~) | Subnet match | A, AAAA |
+| Other string | Substring match | TXT |
+
+#+begin_src sh
+# Exact IP match — find responses resolving to a specific address
+--filter "rdata=93.184.216.34"
+--filter "rdata=2606:2800:220:1:248:1893:25c8:1946"
+
+# Subnet match — find responses resolving to an address in a range
+--filter "rdata=10.0.0.0/8"
+--filter "rdata=192.168.0.0/16"
+
+# TXT substring match — find SPF, DKIM, or other TXT records
+--filter "rdata=v=spf1"
+--filter "rdata=v=DKIM1"
+#+end_src
+
+**** ~msgtype=<type>~ — dnstap message type
+
+Matches messages of a specific dnstap message type.
+Type names are case-insensitive.
+
+Available types:
+
+| Type | Description |
+|------|-------------|
+| ~CLIENT_QUERY~ | Query received from a DNS client |
+| ~CLIENT_RESPONSE~ | Response sent to a DNS client |
+| ~RESOLVER_QUERY~ | Query sent by the resolver to an upstream server |
+| ~RESOLVER_RESPONSE~ | Response received by the resolver from upstream |
+| ~AUTH_QUERY~ | Query received by an authoritative server |
+| ~AUTH_RESPONSE~ | Response sent by an authoritative server |
+| ~FORWARDER_QUERY~ | Query sent by a forwarder |
+| ~FORWARDER_RESPONSE~ | Response received by a forwarder |
+
+#+begin_src sh
+--filter "msgtype=CLIENT_QUERY"
+--filter "msgtype=CLIENT_RESPONSE"
+#+end_src
 
 ** Examples
 
@@ -101,14 +199,36 @@ dnstap-filter --in file:input.dnstap --out yaml:/tmp/filtered.yaml --filter "suf
 # Forward from Unix socket to a TCP collector
 dnstap-filter --in unix:/var/run/named/dnstap.sock --out tcp:collector.example.com:6000 --filter "rcode=NXDOMAIN"
 
+# Filter by client subnet
+dnstap-filter --in file:input.dnstap --filter "subnet=192.168.0.0/24"
+
+# Filter AAAA queries only
+dnstap-filter --in file:input.dnstap --filter "qtype=AAAA"
+
+# Filter responses containing a specific IP in the answer
+dnstap-filter --in file:input.dnstap --filter "rdata=93.184.216.34"
+
+# Filter responses with answers in a subnet
+dnstap-filter --in file:input.dnstap --filter "rdata=10.0.0.0/8"
+
+# Filter responses containing specific TXT content
+dnstap-filter --in file:input.dnstap --filter "rdata=v=spf1"
+
+# Filter only client queries (not responses)
+dnstap-filter --in file:input.dnstap --filter "msgtype=CLIENT_QUERY"
+
 # AND condition
-dnstap-filter --in file:input.dnstap --filter "ip=1.1.1.1 and suffix=example.com."
+dnstap-filter --in file:input.dnstap --filter "subnet=192.168.0.0/24 and suffix=example.com."
 
 # OR condition
 dnstap-filter --in file:input.dnstap --filter "rcode=NXDOMAIN or rcode=SERVFAIL"
 
 # Use parentheses to control precedence
-dnstap-filter --in file:input.dnstap --filter "(ip=1.1.1.1 or ip=8.8.8.8) and fqdn=www.example.com."
+dnstap-filter --in file:input.dnstap --filter "subnet=192.168.0.0/24 and (qtype=AAAA or rcode=NXDOMAIN)"
+
+# Complex: client subnet, AAAA queries or NXDOMAINs for a domain
+dnstap-filter --in file:input.dnstap \
+  --filter "subnet=10.0.0.0/8 and suffix=example.com. and (qtype=AAAA or rcode=NXDOMAIN)"
 
 # Print filter tree only
 dnstap-filter --filter "ip=1.1.1.1 and (suffix=example.com. or rcode=NXDOMAIN)" --print-filter-tree

@@ -27,7 +27,23 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 
 	in := fs.String("in", "", "input spec: file:<path> | unix:<path> | tcp:<host:port>")
 	out := fs.String("out", "", "output spec: file:<path> | unix:<path> | tcp:<host:port> | yaml:<path>|yaml:-\n\t(default: print query name, type and time to stdout)")
-	filterExpr := fs.String("filter", "", "filter expression, e.g. 'ip=1.1.1.1 and (suffix=example.com. or rcode=NXDOMAIN)'")
+	filterExpr := fs.String("filter", "", "filter expression (omit to match all)\n"+
+		"\tPredicates:\n"+
+		"\t  ip=<addr>               DNS client IP exact match        ip=1.1.1.1\n"+
+		"\t  subnet=<CIDR>          DNS client IP subnet match       subnet=192.168.0.0/24\n"+
+		"\t  fqdn=<name>            query name exact match (FQDN)    fqdn=www.example.com.\n"+
+		"\t  suffix=<suffix>        query name suffix match          suffix=example.com.\n"+
+		"\t  qtype=<type>           DNS query type                   qtype=AAAA\n"+
+		"\t  rcode=<rcode>          DNS response code                rcode=NXDOMAIN\n"+
+		"\t  rdata=<value>          response answer record data:\n"+
+		"\t    <IP>                   A/AAAA exact match             rdata=93.184.216.34\n"+
+		"\t    <CIDR>                 A/AAAA subnet match            rdata=10.0.0.0/8\n"+
+		"\t    <string>               TXT substring match            rdata=v=spf1\n"+
+		"\t  msgtype=<type>         dnstap message type              msgtype=CLIENT_QUERY\n"+
+		"\t    types: CLIENT_QUERY CLIENT_RESPONSE RESOLVER_QUERY RESOLVER_RESPONSE\n"+
+		"\t           AUTH_QUERY AUTH_RESPONSE FORWARDER_QUERY FORWARDER_RESPONSE\n"+
+		"\tLogical operators: and  or  (...)\n"+
+		"\tExample: 'subnet=192.168.0.0/24 and (qtype=AAAA or rcode=NXDOMAIN)'")
 	printFilterTree := fs.Bool("print-filter-tree", false, "print parsed filter expression tree and exit")
 	countLimit := 0
 	fs.IntVar(&countLimit, "cout", 0, "process only the first N records from input")
