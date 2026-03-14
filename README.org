@@ -1,24 +1,61 @@
 * dnstap-filter
 
-A tool to filter records from a dnstap file and write matched records to another file.
+A tool to filter records from dnstap sources and write matched records to various outputs.
+
+** Installation
+
+#+begin_src sh
+go install github.com/kimitoboku/dnstap-filter/cmd/dnstap-filter@latest
+#+end_src
 
 ** Usage
 
 #+begin_src sh
-# Build
-make build
-
-# Run
-./dnstap-filter --in input.dnstap --out output.dnstap --filter "ip=1.1.1.1"
+dnstap-filter --in <input-spec> [--out <output-spec>] --filter <expression>
 #+end_src
 
-Required flags:
-- ~--in~: input dnstap file
-- ~--out~: output dnstap file
+*** Input (~--in~)
+
+Specifies the source of dnstap data. The format is ~scheme:address~.
+
+| Scheme | Example | Description |
+|--------|---------|-------------|
+| ~file:<path>~ | ~file:input.dnstap~ | Read from a dnstap frame stream file |
+| ~unix:<path>~ | ~unix:/var/run/named/dnstap.sock~ | Listen on a Unix domain socket (server mode) |
+| ~tcp:<host:port>~ | ~tcp:0.0.0.0:6000~ | Listen on a TCP port (server mode) |
+
+A bare path without a scheme (e.g. ~input.dnstap~) is treated as ~file:~ for backward compatibility.
+
+Note: ~unix:~ and ~tcp:~ inputs run as servers that accept connections from DNS servers (BIND, Unbound, etc.).
+The process runs until killed (Ctrl+C).
+
+*** Output (~--out~)
+
+Specifies the destination for filtered dnstap data. The format is ~scheme:address~.
+
+| Scheme | Example | Description |
+|--------|---------|-------------|
+| *(omitted)* | | Print ~<time> <name> <type>~ to stdout (default) |
+| ~file:<path>~ | ~file:output.dnstap~ | Write dnstap frame stream file (supports SIGHUP log rotation) |
+| ~unix:<path>~ | ~unix:/var/run/collector.sock~ | Connect to a Unix domain socket (client mode) |
+| ~tcp:<host:port>~ | ~tcp:127.0.0.1:6001~ | Connect to a TCP collector (client mode) |
+| ~yaml:<path>~ | ~yaml:/tmp/out.yaml~ | Write human-readable YAML format |
+| ~yaml:-~ | ~yaml:-~ | Write human-readable YAML format to stdout |
+
+A bare path without a scheme (e.g. ~output.dnstap~) is treated as ~file:~ for backward compatibility.
+
+Note: ~unix:~ and ~tcp:~ outputs are clients that connect to a collector. If the collector is not
+available, they retry every 10 seconds.
+
+*** Flags
+
+Required:
+- ~--in~: input spec (required unless ~--print-filter-tree~ is used)
 - ~--filter~: filter expression
 
-Optional flags:
-- ~--print-filter-tree~: print the parsed filter tree and exit (in this mode, ~--in~ and ~--out~ are not required)
+Optional:
+- ~--out~: output spec (default: print query name, type and time to stdout)
+- ~--print-filter-tree~: print the parsed filter tree and exit
 - ~--cout~, ~-c~: process only the first N records from the beginning of input
 
 ** Filter expression
@@ -39,27 +76,51 @@ Operator precedence is ~and~ higher than ~or~, and parentheses can override prec
 ** Examples
 
 #+begin_src sh
-# 1) Single condition
-./dnstap-filter --in input.dnstap --out out1.dnstap --filter "ip=1.1.1.1"
+# Default output: print query name, type and time to stdout
+dnstap-filter --in file:input.dnstap --filter "ip=1.1.1.1"
+# Output: 2024-01-15 12:34:56 example.com. A
 
-# 2) AND condition
-./dnstap-filter --in input.dnstap --out out2.dnstap --filter "ip=1.1.1.1 and suffix=example.com."
+# Filter file to file (backward-compatible bare paths)
+dnstap-filter --in input.dnstap --out output.dnstap --filter "ip=1.1.1.1"
 
-# 3) OR condition
-./dnstap-filter --in input.dnstap --out out3.dnstap --filter "rcode=NXDOMAIN or rcode=SERVFAIL"
+# Explicit file scheme
+dnstap-filter --in file:input.dnstap --out file:output.dnstap --filter "ip=1.1.1.1"
 
-# 4) Use parentheses to control precedence
-./dnstap-filter --in input.dnstap --out out4.dnstap --filter "(ip=1.1.1.1 or ip=8.8.8.8) and fqdn=www.example.com."
+# Listen on Unix socket (e.g. from BIND/Unbound) and write to file
+dnstap-filter --in unix:/var/run/named/dnstap.sock --out file:output.dnstap --filter "suffix=example.com."
 
-# 5) Print filter tree only
-./dnstap-filter --filter "ip=1.1.1.1 and (suffix=example.com. or rcode=NXDOMAIN)" --print-filter-tree
+# Listen on TCP and write to file
+dnstap-filter --in tcp:0.0.0.0:6000 --out file:output.dnstap --filter "rcode=NXDOMAIN"
 
-# 6) Process only first 100 records
-./dnstap-filter --in input.dnstap --out out5.dnstap --filter "suffix=example.com." --cout 100
+# Inspect filtered records as YAML on stdout
+dnstap-filter --in file:input.dnstap --out yaml:- --filter "ip=1.1.1.1"
+
+# Write filtered records as YAML to a file
+dnstap-filter --in file:input.dnstap --out yaml:/tmp/filtered.yaml --filter "suffix=.evil.com."
+
+# Forward from Unix socket to a TCP collector
+dnstap-filter --in unix:/var/run/named/dnstap.sock --out tcp:collector.example.com:6000 --filter "rcode=NXDOMAIN"
+
+# AND condition
+dnstap-filter --in file:input.dnstap --filter "ip=1.1.1.1 and suffix=example.com."
+
+# OR condition
+dnstap-filter --in file:input.dnstap --filter "rcode=NXDOMAIN or rcode=SERVFAIL"
+
+# Use parentheses to control precedence
+dnstap-filter --in file:input.dnstap --filter "(ip=1.1.1.1 or ip=8.8.8.8) and fqdn=www.example.com."
+
+# Print filter tree only
+dnstap-filter --filter "ip=1.1.1.1 and (suffix=example.com. or rcode=NXDOMAIN)" --print-filter-tree
+
+# Process only first 100 records
+dnstap-filter --in file:input.dnstap --filter "suffix=example.com." --cout 100
 #+end_src
 
 ** Notes
 
 - The program exits with an error at startup if the filter expression is invalid.
 - ~and~ / ~or~ operators are case-insensitive.
+- ~yaml:~ output is human-readable and cannot be used as input to another ~dnstap-filter~ instance.
+- File output (~file:~) supports SIGHUP for log rotation (closes and reopens the output file).
 - The legacy positional-argument CLI (~input output ip~) has been removed.
