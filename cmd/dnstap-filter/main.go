@@ -11,11 +11,12 @@ import (
 
 	"github.com/kimitoboku/dnstap-filter/internal/expression"
 	"github.com/kimitoboku/dnstap-filter/internal/filter"
+	"github.com/kimitoboku/dnstap-filter/internal/transport"
 )
 
 type cliConfig struct {
-	inputFileName   string
-	outputFileName  string
+	inputSpec       string
+	outputSpec      string
 	filterExpr      string
 	printFilterTree bool
 	countLimit      int
@@ -25,8 +26,8 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 	fs := flag.NewFlagSet("dnstap-filter", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
-	in := fs.String("in", "", "input dnstap file")
-	out := fs.String("out", "", "output dnstap file")
+	in := fs.String("in", "", "input spec: file:<path> | unix:<path> | tcp:<host:port>")
+	out := fs.String("out", "", "output spec: file:<path> | unix:<path> | tcp:<host:port> | yaml:<path>|yaml:-\n\t(default: print query name, type and time to stdout)")
 	filterExpr := fs.String("filter", "", "filter expression, e.g. 'ip=1.1.1.1 and (suffix=example.com. or rcode=NXDOMAIN)'")
 	printFilterTree := fs.Bool("print-filter-tree", false, "print parsed filter expression tree and exit")
 	countLimit := 0
@@ -45,13 +46,13 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 	if countLimit < 0 {
 		return cliConfig{}, errors.New("flag --cout/-c must be >= 0")
 	}
-	if !*printFilterTree && (*in == "" || *out == "") {
-		return cliConfig{}, errors.New("required flags: --in, --out (or use --print-filter-tree)")
+	if !*printFilterTree && *in == "" {
+		return cliConfig{}, errors.New("required flag: --in (or use --print-filter-tree)")
 	}
 
 	return cliConfig{
-		inputFileName:   *in,
-		outputFileName:  *out,
+		inputSpec:       *in,
+		outputSpec:      *out,
 		filterExpr:      *filterExpr,
 		printFilterTree: *printFilterTree,
 		countLimit:      countLimit,
@@ -100,14 +101,14 @@ func run(args []string) error {
 		return nil
 	}
 
-	i, err := dnstap.NewFrameStreamInputFromFilename(cfg.inputFileName)
+	i, err := transport.ParseInput(cfg.inputSpec)
 	if err != nil {
-		return fmt.Errorf("dnstap: failed to open input file %s: %v", cfg.inputFileName, err)
+		return fmt.Errorf("input: %w", err)
 	}
 
-	o, err := newFileOutput(cfg.outputFileName)
+	o, err := transport.ParseOutput(cfg.outputSpec)
 	if err != nil {
-		return fmt.Errorf("dnstap: file output error on '%s': %v", cfg.outputFileName, err)
+		return fmt.Errorf("output: %w", err)
 	}
 	go o.RunOutputLoop()
 	outputChannel := o.GetOutputChannel()

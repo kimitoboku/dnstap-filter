@@ -8,11 +8,11 @@ func TestParseCLIArgs_Success(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if cfg.inputFileName != "in.dnstap" {
-		t.Fatalf("unexpected input file: %s", cfg.inputFileName)
+	if cfg.inputSpec != "in.dnstap" {
+		t.Fatalf("unexpected input spec: %s", cfg.inputSpec)
 	}
-	if cfg.outputFileName != "out.dnstap" {
-		t.Fatalf("unexpected output file: %s", cfg.outputFileName)
+	if cfg.outputSpec != "out.dnstap" {
+		t.Fatalf("unexpected output spec: %s", cfg.outputSpec)
 	}
 	if cfg.filterExpr != "ip=1.1.1.1" {
 		t.Fatalf("unexpected filter expr: %s", cfg.filterExpr)
@@ -69,10 +69,20 @@ func TestParseCLIArgs_CountOptionNegative(t *testing.T) {
 	}
 }
 
-func TestParseCLIArgs_RequireInOutWithoutPrintMode(t *testing.T) {
+func TestParseCLIArgs_RequireInWithoutPrintMode(t *testing.T) {
 	_, err := parseCLIArgs([]string{"--filter", "ip=1.1.1.1"})
 	if err == nil {
-		t.Fatalf("expected error when --in/--out are missing in normal mode")
+		t.Fatalf("expected error when --in is missing in normal mode")
+	}
+}
+
+func TestParseCLIArgs_OutOptional(t *testing.T) {
+	cfg, err := parseCLIArgs([]string{"--in", "in.dnstap", "--filter", "ip=1.1.1.1"})
+	if err != nil {
+		t.Fatalf("unexpected error when --out is omitted: %v", err)
+	}
+	if cfg.outputSpec != "" {
+		t.Fatalf("expected empty outputSpec when --out is omitted, got: %s", cfg.outputSpec)
 	}
 }
 
@@ -80,5 +90,34 @@ func TestParseCLIArgs_NoPositionalArgs(t *testing.T) {
 	_, err := parseCLIArgs([]string{"--in", "in.dnstap", "--out", "out.dnstap", "--filter", "ip=1.1.1.1", "legacy"})
 	if err == nil {
 		t.Fatalf("expected error when positional args are present")
+	}
+}
+
+func TestParseCLIArgs_URISchemes(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		out  string
+	}{
+		{"file scheme", "file:in.dnstap", "file:out.dnstap"},
+		{"unix scheme", "unix:/var/run/named/dnstap.sock", "unix:/var/run/collector.sock"},
+		{"tcp scheme", "tcp:0.0.0.0:6000", "tcp:127.0.0.1:6001"},
+		{"yaml out", "file:in.dnstap", "yaml:-"},
+		{"yaml file out", "file:in.dnstap", "yaml:/tmp/out.yaml"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := parseCLIArgs([]string{"--in", tt.in, "--out", tt.out, "--filter", "ip=1.1.1.1"})
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if cfg.inputSpec != tt.in {
+				t.Fatalf("expected inputSpec %q, got %q", tt.in, cfg.inputSpec)
+			}
+			if cfg.outputSpec != tt.out {
+				t.Fatalf("expected outputSpec %q, got %q", tt.out, cfg.outputSpec)
+			}
+		})
 	}
 }
