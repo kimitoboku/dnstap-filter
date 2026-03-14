@@ -1,9 +1,11 @@
-package filters
+package expression
 
 import (
 	"fmt"
 	"strings"
 	"unicode"
+
+	"github.com/kimitoboku/dnstap-filter/internal/filter"
 )
 
 type tokenType int
@@ -28,7 +30,7 @@ type parser struct {
 	pos    int
 }
 
-func ParseFilterExpression(expr string) (Node, error) {
+func ParseFilterExpression(expr string) (filter.Node, error) {
 	tokens, err := tokenize(expr)
 	if err != nil {
 		return nil, err
@@ -100,7 +102,7 @@ func tokenize(input string) ([]token, error) {
 	return tokens, nil
 }
 
-func (p *parser) parseOr() (Node, error) {
+func (p *parser) parseOr() (filter.Node, error) {
 	left, err := p.parseAnd()
 	if err != nil {
 		return nil, err
@@ -110,12 +112,12 @@ func (p *parser) parseOr() (Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		left = &OrNode{Left: left, Right: right}
+		left = &filter.OrNode{Left: left, Right: right}
 	}
 	return left, nil
 }
 
-func (p *parser) parseAnd() (Node, error) {
+func (p *parser) parseAnd() (filter.Node, error) {
 	left, err := p.parsePrimary()
 	if err != nil {
 		return nil, err
@@ -125,12 +127,12 @@ func (p *parser) parseAnd() (Node, error) {
 		if err != nil {
 			return nil, err
 		}
-		left = &AndNode{Left: left, Right: right}
+		left = &filter.AndNode{Left: left, Right: right}
 	}
 	return left, nil
 }
 
-func (p *parser) parsePrimary() (Node, error) {
+func (p *parser) parsePrimary() (filter.Node, error) {
 	if p.match(tokenLParen) {
 		node, err := p.parseOr()
 		if err != nil {
@@ -158,7 +160,7 @@ func (p *parser) parsePrimary() (Node, error) {
 	return parsePredicate(tok)
 }
 
-func parsePredicate(tok token) (Node, error) {
+func parsePredicate(tok token) (filter.Node, error) {
 	parts := strings.SplitN(tok.lit, "=", 2)
 	if len(parts) != 2 {
 		return nil, fmt.Errorf("token %d at char %d ('%s'): predicate must be key=value", tok.index, tok.pos, tok.lit)
@@ -175,17 +177,17 @@ func parsePredicate(tok token) (Node, error) {
 
 	switch key {
 	case "ip":
-		f := NewIPFilter(value)
+		f := filter.NewIPFilter(value)
 		if f.IP == nil {
 			return nil, fmt.Errorf("token %d at char %d ('%s'): invalid ip value", tok.index, tok.pos, tok.lit)
 		}
-		return &PredicateNode{Filter: f, Key: key, Value: value}, nil
+		return &filter.PredicateNode{Filter: f, Key: key, Value: value}, nil
 	case "fqdn":
-		return &PredicateNode{Filter: NewFQDNFilter(value), Key: key, Value: value}, nil
+		return &filter.PredicateNode{Filter: filter.NewFQDNFilter(value), Key: key, Value: value}, nil
 	case "suffix":
-		return &PredicateNode{Filter: NewSuffixFilter(value), Key: key, Value: value}, nil
+		return &filter.PredicateNode{Filter: filter.NewSuffixFilter(value), Key: key, Value: value}, nil
 	case "rcode":
-		return &PredicateNode{Filter: NewRcodeFilter(value), Key: key, Value: value}, nil
+		return &filter.PredicateNode{Filter: filter.NewRcodeFilter(value), Key: key, Value: value}, nil
 	default:
 		return nil, fmt.Errorf("token %d at char %d ('%s'): unknown predicate key '%s'", tok.index, tok.pos, tok.lit, key)
 	}

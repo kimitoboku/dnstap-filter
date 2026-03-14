@@ -9,7 +9,8 @@ import (
 	"github.com/dnstap/golang-dnstap"
 	"google.golang.org/protobuf/proto"
 
-	"github.com/kimitoboku/dnstap-filter/filters"
+	"github.com/kimitoboku/dnstap-filter/internal/expression"
+	"github.com/kimitoboku/dnstap-filter/internal/filter"
 )
 
 type cliConfig struct {
@@ -57,7 +58,7 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 	}, nil
 }
 
-func dnstapFilter(outputChannel chan []byte, root filters.Node, countLimit int) chan []byte {
+func dnstapFilter(outputChannel chan []byte, root filter.Node, countLimit int) chan []byte {
 	inputChannel := make(chan []byte, 32)
 	go func() {
 		dt := &dnstap.Dnstap{}
@@ -90,12 +91,12 @@ func run(args []string) error {
 		return err
 	}
 
-	root, err := filters.ParseFilterExpression(cfg.filterExpr)
+	root, err := expression.ParseFilterExpression(cfg.filterExpr)
 	if err != nil {
 		return fmt.Errorf("invalid filter expression: %w", err)
 	}
 	if cfg.printFilterTree {
-		fmt.Println(filters.FormatTree(root))
+		fmt.Println(filter.FormatTree(root))
 		return nil
 	}
 
