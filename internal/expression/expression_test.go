@@ -140,6 +140,220 @@ func TestParseFilterExpression_SuffixOrDoesNotMatchInvalidDNSPayload(t *testing.
 	}
 }
 
+func TestIPFilter_QueryAddressOnly(t *testing.T) {
+	node, err := ParseFilterExpression("ip=1.1.1.1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+		t.Fatalf("expected ip filter to match QueryAddress")
+	}
+
+	// ResponseAddress only must NOT match (breaking change)
+	if node.Eval(newResponseMessage(t, "www.example.com.", "1.1.1.1", dns.RcodeSuccess)) {
+		t.Fatalf("ip filter must not match ResponseAddress")
+	}
+}
+
+func TestSubnetFilter_Match(t *testing.T) {
+	node, err := ParseFilterExpression("subnet=192.168.1.0/24")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !node.Eval(newQueryMessage(t, "www.example.com.", "192.168.1.42")) {
+		t.Fatalf("expected subnet filter to match IP inside range")
+	}
+
+	if node.Eval(newQueryMessage(t, "www.example.com.", "192.168.2.1")) {
+		t.Fatalf("expected subnet filter to not match IP outside range")
+	}
+}
+
+func TestSubnetFilter_InvalidCIDR(t *testing.T) {
+	_, err := ParseFilterExpression("subnet=not-a-cidr")
+	if err == nil {
+		t.Fatalf("expected error for invalid CIDR")
+	}
+}
+
+func TestQtypeFilter_Match(t *testing.T) {
+	node, err := ParseFilterExpression("qtype=AAAA")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	msg := new(dns.Msg)
+	msg.SetQuestion("www.example.com.", dns.TypeAAAA)
+	payload, err := msg.Pack()
+	if err != nil {
+		t.Fatalf("failed to pack: %v", err)
+	}
+	dnstapMsg := dnstap.Message{
+		QueryAddress: net.ParseIP("1.1.1.1").To4(),
+		QueryMessage: payload,
+	}
+
+	if !node.Eval(dnstapMsg) {
+		t.Fatalf("expected qtype=AAAA to match AAAA query")
+	}
+
+	if node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+		t.Fatalf("expected qtype=AAAA to not match A query")
+	}
+}
+
+func TestQtypeFilter_CaseInsensitive(t *testing.T) {
+	_, err := ParseFilterExpression("qtype=aaaa")
+	if err != nil {
+		t.Fatalf("expected case-insensitive qtype to be accepted: %v", err)
+	}
+}
+
+func TestQtypeFilter_Invalid(t *testing.T) {
+	_, err := ParseFilterExpression("qtype=NOTATYPE")
+	if err == nil {
+		t.Fatalf("expected error for unknown DNS type")
+	}
+}
+
+func TestRdataFilter_IPMatch(t *testing.T) {
+	node, err := ParseFilterExpression("rdata=93.184.216.34")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	aRR, _ := dns.NewRR("www.example.com. 300 IN A 93.184.216.34")
+	msg := newResponseMessageWithAnswers(t, "www.example.com.", "1.1.1.1", []dns.RR{aRR})
+	if !node.Eval(msg) {
+		t.Fatalf("expected rdata IP filter to match A record")
+	}
+
+	aRR2, _ := dns.NewRR("www.example.com. 300 IN A 1.2.3.4")
+	msg2 := newResponseMessageWithAnswers(t, "www.example.com.", "1.1.1.1", []dns.RR{aRR2})
+	if node.Eval(msg2) {
+		t.Fatalf("expected rdata IP filter to not match different A record")
+	}
+}
+
+func TestRdataFilter_SubnetMatch(t *testing.T) {
+	node, err := ParseFilterExpression("rdata=10.0.0.0/8")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	aRR, _ := dns.NewRR("host.example.com. 300 IN A 10.42.1.5")
+	msg := newResponseMessageWithAnswers(t, "host.example.com.", "1.1.1.1", []dns.RR{aRR})
+	if !node.Eval(msg) {
+		t.Fatalf("expected rdata subnet filter to match A record in range")
+	}
+
+	aRR2, _ := dns.NewRR("host.example.com. 300 IN A 192.168.1.1")
+	msg2 := newResponseMessageWithAnswers(t, "host.example.com.", "1.1.1.1", []dns.RR{aRR2})
+	if node.Eval(msg2) {
+		t.Fatalf("expected rdata subnet filter to not match A record outside range")
+	}
+}
+
+func TestRdataFilter_TXTMatch(t *testing.T) {
+	node, err := ParseFilterExpression("rdata=v=spf1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	txtRR, _ := dns.NewRR(`example.com. 300 IN TXT "v=spf1 include:example.net ~all"`)
+	msg := newResponseMessageWithAnswers(t, "example.com.", "1.1.1.1", []dns.RR{txtRR})
+	if !node.Eval(msg) {
+		t.Fatalf("expected rdata TXT filter to match substring")
+	}
+}
+
+func TestRdataFilter_NoMatchOnQueryMessage(t *testing.T) {
+	node, err := ParseFilterExpression("rdata=1.1.1.1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+		t.Fatalf("rdata filter must not match query messages")
+	}
+}
+
+func TestRdataFilter_InvalidCIDR(t *testing.T) {
+	_, err := ParseFilterExpression("rdata=192.168/bad")
+	if err == nil {
+		t.Fatalf("expected error for invalid CIDR in rdata")
+	}
+}
+
+func TestMsgtypeFilter_Match(t *testing.T) {
+	node, err := ParseFilterExpression("msgtype=CLIENT_QUERY")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	clientQuery := newTypedMessage(t, "www.example.com.", "1.1.1.1", dns.TypeA, dnstap.Message_CLIENT_QUERY)
+	if !node.Eval(clientQuery) {
+		t.Fatalf("expected msgtype=CLIENT_QUERY to match CLIENT_QUERY message")
+	}
+
+	clientResponse := newTypedMessage(t, "www.example.com.", "1.1.1.1", dns.TypeA, dnstap.Message_CLIENT_RESPONSE)
+	if node.Eval(clientResponse) {
+		t.Fatalf("expected msgtype=CLIENT_QUERY to not match CLIENT_RESPONSE")
+	}
+}
+
+func TestMsgtypeFilter_CaseInsensitive(t *testing.T) {
+	_, err := ParseFilterExpression("msgtype=client_query")
+	if err != nil {
+		t.Fatalf("expected case-insensitive msgtype to be accepted: %v", err)
+	}
+}
+
+func TestMsgtypeFilter_Invalid(t *testing.T) {
+	_, err := ParseFilterExpression("msgtype=NOT_A_TYPE")
+	if err == nil {
+		t.Fatalf("expected error for unknown msgtype")
+	}
+}
+
+func newResponseMessageWithAnswers(t *testing.T, name string, ip string, answers []dns.RR) dnstap.Message {
+	t.Helper()
+
+	msg := new(dns.Msg)
+	msg.SetQuestion(name, dns.TypeA)
+	msg.Answer = answers
+	payload, err := msg.Pack()
+	if err != nil {
+		t.Fatalf("failed to pack response message: %v", err)
+	}
+
+	msgType := dnstap.Message_CLIENT_RESPONSE
+	return dnstap.Message{
+		Type:            &msgType,
+		ResponseAddress: net.ParseIP(ip).To4(),
+		ResponseMessage: payload,
+	}
+}
+
+func newTypedMessage(t *testing.T, name string, ip string, qtype uint16, msgType dnstap.Message_Type) dnstap.Message {
+	t.Helper()
+
+	msg := new(dns.Msg)
+	msg.SetQuestion(name, qtype)
+	payload, err := msg.Pack()
+	if err != nil {
+		t.Fatalf("failed to pack message: %v", err)
+	}
+
+	return dnstap.Message{
+		Type:         &msgType,
+		QueryAddress: net.ParseIP(ip).To4(),
+		QueryMessage: payload,
+	}
+}
+
 func newQueryMessage(t *testing.T, name string, ip string) dnstap.Message {
 	t.Helper()
 
