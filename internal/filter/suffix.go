@@ -18,18 +18,17 @@ func NewSuffixFilter(a string) *SuffixFilter {
 }
 
 func (p *SuffixFilter) Filter(m dnstap.Message) bool {
-	msg := new(dns.Msg)
-	if m.QueryAddress != nil {
-		err := msg.Unpack(m.QueryMessage)
-		if err != nil {
-			return false
-		}
-	} else if m.ResponseAddress != nil {
-		err := msg.Unpack(m.ResponseMessage)
-		if err != nil {
-			return false
-		}
+	var msgBytes []byte
+	if m.QueryMessage != nil {
+		msgBytes = m.QueryMessage
+	} else if m.ResponseMessage != nil {
+		msgBytes = m.ResponseMessage
 	} else {
+		return false
+	}
+
+	msg := new(dns.Msg)
+	if err := msg.Unpack(msgBytes); err != nil {
 		return false
 	}
 
