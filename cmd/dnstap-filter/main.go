@@ -55,9 +55,11 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 	}, nil
 }
 
-func dnstapFilter(outputChannel chan []byte, root filter.Node, countLimit int) chan []byte {
+func dnstapFilter(outputChannel chan []byte, root filter.Node, countLimit int) (chan []byte, chan struct{}) {
 	inputChannel := make(chan []byte, 32)
+	done := make(chan struct{})
 	go func() {
+		defer close(done)
 		dt := &dnstap.Dnstap{}
 		processed := 0
 		for frame := range inputChannel {
@@ -79,7 +81,7 @@ func dnstapFilter(outputChannel chan []byte, root filter.Node, countLimit int) c
 		}
 	}()
 
-	return inputChannel
+	return inputChannel, done
 }
 
 func run(args []string) error {
@@ -109,9 +111,12 @@ func run(args []string) error {
 	go o.RunOutputLoop()
 	outputChannel := o.GetOutputChannel()
 
-	inputChannel := dnstapFilter(outputChannel, root, cfg.countLimit)
+	inputChannel, filterDone := dnstapFilter(outputChannel, root, cfg.countLimit)
 	go i.ReadInto(inputChannel)
 	i.Wait()
+	close(inputChannel)
+	<-filterDone
+	o.Close()
 
 	return nil
 }
