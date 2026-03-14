@@ -11,6 +11,7 @@ import (
 
 	"github.com/kimitoboku/dnstap-filter/internal/expression"
 	"github.com/kimitoboku/dnstap-filter/internal/filter"
+	"github.com/kimitoboku/dnstap-filter/internal/transport"
 )
 
 type cliConfig struct {
@@ -100,12 +101,12 @@ func run(args []string) error {
 		return nil
 	}
 
-	i, err := parseInput(cfg.inputSpec)
+	i, err := transport.ParseInput(cfg.inputSpec)
 	if err != nil {
 		return fmt.Errorf("input: %w", err)
 	}
 
-	o, err := parseOutput(cfg.outputSpec)
+	o, err := transport.ParseOutput(cfg.outputSpec)
 	if err != nil {
 		return fmt.Errorf("output: %w", err)
 	}

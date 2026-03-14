@@ -1,4 +1,4 @@
-package main
+package transport
 
 import (
 	"bytes"
@@ -13,45 +13,45 @@ import (
 
 const defaultTimeFormat = "2006-01-02 15:04:05"
 
-// parseOutput parses a transport spec and returns a dnstap.Output.
+// ParseOutput parses a transport spec and returns a dnstap.Output.
 //
 // Supported schemes:
-//   - (empty)           - default: print "<time> <name> <type>" to stdout
-//   - file:<path>       - dnstap frame stream file (with SIGHUP log rotation)
-//   - unix:<path>       - Unix domain socket client (connects to a collector)
-//   - tcp:<host:port>   - TCP client (connects to a collector)
+//   - (empty)            - default: print "<time> <name> <type>" to stdout
+//   - file:<path>        - dnstap frame stream file (with SIGHUP log rotation)
+//   - unix:<path>        - Unix domain socket client (connects to a collector)
+//   - tcp:<host:port>    - TCP client (connects to a collector)
 //   - yaml:<path>|yaml:- - human-readable YAML format (- means stdout)
 //
 // Bare paths without a scheme are treated as file: (backward compatibility).
-func parseOutput(spec string) (dnstap.Output, error) {
+func ParseOutput(spec string) (dnstap.Output, error) {
 	if spec == "" {
 		return dnstap.NewTextOutput(os.Stdout, defaultQueryFormat), nil
 	}
 
-	uri, err := parseTransportURI(spec)
+	u, err := parseURI(spec)
 	if err != nil {
 		return nil, fmt.Errorf("invalid output spec %q: %w", spec, err)
 	}
 
-	switch uri.scheme {
+	switch u.scheme {
 	case schemeFile:
-		return newFileOutput(uri.address)
+		return newFileOutput(u.address)
 	case schemeUnix:
-		addr, err := net.ResolveUnixAddr("unix", uri.address)
+		addr, err := net.ResolveUnixAddr("unix", u.address)
 		if err != nil {
-			return nil, fmt.Errorf("unix output: invalid path %q: %w", uri.address, err)
+			return nil, fmt.Errorf("unix output: invalid path %q: %w", u.address, err)
 		}
 		return dnstap.NewFrameStreamSockOutput(addr)
 	case schemeTCP:
-		addr, err := net.ResolveTCPAddr("tcp", uri.address)
+		addr, err := net.ResolveTCPAddr("tcp", u.address)
 		if err != nil {
-			return nil, fmt.Errorf("tcp output: invalid address %q: %w", uri.address, err)
+			return nil, fmt.Errorf("tcp output: invalid address %q: %w", u.address, err)
 		}
 		return dnstap.NewFrameStreamSockOutput(addr)
 	case schemeYAML:
-		return dnstap.NewTextOutputFromFilename(uri.address, dnstap.YamlFormat, false)
+		return dnstap.NewTextOutputFromFilename(u.address, dnstap.YamlFormat, false)
 	default:
-		return nil, fmt.Errorf("unsupported output scheme %q", uri.scheme)
+		return nil, fmt.Errorf("unsupported output scheme %q", u.scheme)
 	}
 }
 
