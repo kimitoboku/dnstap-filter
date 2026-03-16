@@ -318,6 +318,106 @@ func TestMsgtypeFilter_Invalid(t *testing.T) {
 	}
 }
 
+func TestNotOperator_Simple(t *testing.T) {
+	node, err := ParseFilterExpression("not ip=1.1.1.1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+		t.Fatalf("expected not ip=1.1.1.1 to NOT match 1.1.1.1")
+	}
+	if !node.Eval(newQueryMessage(t, "www.example.com.", "2.2.2.2")) {
+		t.Fatalf("expected not ip=1.1.1.1 to match 2.2.2.2")
+	}
+}
+
+func TestNotOperator_WithGroup(t *testing.T) {
+	node, err := ParseFilterExpression("not (ip=1.1.1.1 or ip=2.2.2.2)")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+		t.Fatalf("expected not (ip=1.1.1.1 or ip=2.2.2.2) to NOT match 1.1.1.1")
+	}
+	if node.Eval(newQueryMessage(t, "www.example.com.", "2.2.2.2")) {
+		t.Fatalf("expected not (ip=1.1.1.1 or ip=2.2.2.2) to NOT match 2.2.2.2")
+	}
+	if !node.Eval(newQueryMessage(t, "www.example.com.", "3.3.3.3")) {
+		t.Fatalf("expected not (ip=1.1.1.1 or ip=2.2.2.2) to match 3.3.3.3")
+	}
+}
+
+func TestNotOperator_CombinedWithAnd(t *testing.T) {
+	node, err := ParseFilterExpression("suffix=example.com. and not ip=1.1.1.1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+		t.Fatalf("expected to NOT match when ip=1.1.1.1")
+	}
+	if !node.Eval(newQueryMessage(t, "www.example.com.", "2.2.2.2")) {
+		t.Fatalf("expected to match when ip=2.2.2.2 and suffix matches")
+	}
+}
+
+func TestNotOperator_DoubleNegation(t *testing.T) {
+	node, err := ParseFilterExpression("not not ip=1.1.1.1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+		t.Fatalf("expected not not ip=1.1.1.1 to match 1.1.1.1")
+	}
+	if node.Eval(newQueryMessage(t, "www.example.com.", "2.2.2.2")) {
+		t.Fatalf("expected not not ip=1.1.1.1 to NOT match 2.2.2.2")
+	}
+}
+
+func TestNotOperator_CaseInsensitive(t *testing.T) {
+	node, err := ParseFilterExpression("NOT ip=1.1.1.1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+		t.Fatalf("expected NOT to work case-insensitively")
+	}
+}
+
+func TestNotOperator_Errors(t *testing.T) {
+	cases := []string{
+		"not",
+		"not and ip=1.1.1.1",
+		"not or ip=1.1.1.1",
+	}
+
+	for _, expr := range cases {
+		_, err := ParseFilterExpression(expr)
+		if err == nil {
+			t.Fatalf("expected error for expression: %q", expr)
+		}
+	}
+}
+
+func TestFormatTree_WithNot(t *testing.T) {
+	node, err := ParseFilterExpression("not ip=1.1.1.1")
+	if err != nil {
+		t.Fatalf("unexpected parse error: %v", err)
+	}
+
+	got := filter.FormatTree(node)
+	if !strings.Contains(got, "NOT") {
+		t.Fatalf("expected tree to contain NOT, got:\n%s", got)
+	}
+	if !strings.Contains(got, "PREDICATE ip=1.1.1.1") {
+		t.Fatalf("expected tree to contain PREDICATE ip=1.1.1.1, got:\n%s", got)
+	}
+}
+
 func newResponseMessageWithAnswers(t *testing.T, name string, ip string, answers []dns.RR) dnstap.Message {
 	t.Helper()
 

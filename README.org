@@ -60,8 +60,8 @@ Optional:
 
 ** Filter expression
 
-Predicates can be combined with logical operators ~and~, ~or~, and ~(...)~ for grouping.
-Operator precedence: ~and~ binds tighter than ~or~; parentheses override precedence.
+Predicates can be combined with logical operators ~and~, ~or~, ~not~, and ~(...)~ for grouping.
+Operator precedence: ~not~ binds tightest, then ~and~, then ~or~; parentheses override precedence.
 Omitting ~--filter~ matches all messages.
 
 *** Predicates
@@ -171,6 +171,21 @@ Available types:
 --filter "msgtype=CLIENT_RESPONSE"
 #+end_src
 
+*** Negation (~not~)
+
+The ~not~ operator negates any predicate or grouped expression.
+
+#+begin_src sh
+# Exclude AAAA queries
+--filter "not qtype=AAAA"
+
+# Internal subnet, excluding NXDOMAIN responses
+--filter "subnet=10.0.0.0/8 and not rcode=NXDOMAIN"
+
+# Exclude a group of query types
+--filter "not (qtype=A or qtype=AAAA)"
+#+end_src
+
 ** Examples
 
 #+begin_src sh
@@ -230,6 +245,15 @@ dnstap-filter --in file:input.dnstap --filter "subnet=192.168.0.0/24 and (qtype=
 dnstap-filter --in file:input.dnstap \
   --filter "subnet=10.0.0.0/8 and suffix=example.com. and (qtype=AAAA or rcode=NXDOMAIN)"
 
+# Exclude AAAA queries
+dnstap-filter --in file:input.dnstap --filter "not qtype=AAAA"
+
+# Internal subnet, excluding NXDOMAIN
+dnstap-filter --in file:input.dnstap --filter "subnet=10.0.0.0/8 and not rcode=NXDOMAIN"
+
+# Exclude a group of query types
+dnstap-filter --in file:input.dnstap --filter "not (qtype=A or qtype=AAAA)"
+
 # Print filter tree only
 dnstap-filter --filter "ip=1.1.1.1 and (suffix=example.com. or rcode=NXDOMAIN)" --print-filter-tree
 
@@ -240,7 +264,7 @@ dnstap-filter --in file:input.dnstap --filter "suffix=example.com." --cout 100
 ** Notes
 
 - The program exits with an error at startup if the filter expression is invalid.
-- ~and~ / ~or~ operators are case-insensitive.
+- ~and~ / ~or~ / ~not~ operators are case-insensitive.
 - ~yaml:~ output is human-readable and cannot be used as input to another ~dnstap-filter~ instance.
 - File output (~file:~) supports SIGHUP for log rotation (closes and reopens the output file).
 - The legacy positional-argument CLI (~input output ip~) has been removed.

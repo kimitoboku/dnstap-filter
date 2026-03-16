@@ -14,6 +14,7 @@ const (
 	tokenWord tokenType = iota
 	tokenAnd
 	tokenOr
+	tokenNot
 	tokenLParen
 	tokenRParen
 )
@@ -93,6 +94,8 @@ func tokenize(input string) ([]token, error) {
 			tokens = append(tokens, token{typ: tokenAnd, lit: word, index: tokenIndex, pos: start})
 		case strings.EqualFold(word, "or"):
 			tokens = append(tokens, token{typ: tokenOr, lit: word, index: tokenIndex, pos: start})
+		case strings.EqualFold(word, "not"):
+			tokens = append(tokens, token{typ: tokenNot, lit: word, index: tokenIndex, pos: start})
 		default:
 			tokens = append(tokens, token{typ: tokenWord, lit: word, index: tokenIndex, pos: start})
 		}
@@ -118,18 +121,29 @@ func (p *parser) parseOr() (filter.Node, error) {
 }
 
 func (p *parser) parseAnd() (filter.Node, error) {
-	left, err := p.parsePrimary()
+	left, err := p.parseNot()
 	if err != nil {
 		return nil, err
 	}
 	for p.match(tokenAnd) {
-		right, err := p.parsePrimary()
+		right, err := p.parseNot()
 		if err != nil {
 			return nil, err
 		}
 		left = &filter.AndNode{Left: left, Right: right}
 	}
 	return left, nil
+}
+
+func (p *parser) parseNot() (filter.Node, error) {
+	if p.match(tokenNot) {
+		child, err := p.parseNot()
+		if err != nil {
+			return nil, err
+		}
+		return &filter.NotNode{Child: child}, nil
+	}
+	return p.parsePrimary()
 }
 
 func (p *parser) parsePrimary() (filter.Node, error) {
