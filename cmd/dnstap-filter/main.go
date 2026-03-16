@@ -39,6 +39,7 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 		"\t    <IP>                   A/AAAA exact match             rdata=93.184.216.34\n"+
 		"\t    <CIDR>                 A/AAAA subnet match            rdata=10.0.0.0/8\n"+
 		"\t    <string>               TXT substring match            rdata=v=spf1\n"+
+		"\t  regexp=<pattern>       query name regexp match          regexp=\\.example\\.com\\.$\n"+
 		"\t  msgtype=<type>         dnstap message type              msgtype=CLIENT_QUERY\n"+
 		"\t    types: CLIENT_QUERY CLIENT_RESPONSE RESOLVER_QUERY RESOLVER_RESPONSE\n"+
 		"\t           AUTH_QUERY AUTH_RESPONSE FORWARDER_QUERY FORWARDER_RESPONSE\n"+

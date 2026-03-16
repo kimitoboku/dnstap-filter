@@ -318,6 +318,47 @@ func TestMsgtypeFilter_Invalid(t *testing.T) {
 	}
 }
 
+func TestRegexpFilter_Match(t *testing.T) {
+	node, err := ParseFilterExpression(`regexp=^www\.example\.com\.$`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+		t.Fatalf("expected regexp to match www.example.com.")
+	}
+
+	if node.Eval(newQueryMessage(t, "mail.example.com.", "1.1.1.1")) {
+		t.Fatalf("expected regexp to not match mail.example.com.")
+	}
+}
+
+func TestRegexpFilter_PartialMatch(t *testing.T) {
+	node, err := ParseFilterExpression(`regexp=\.example\.com\.$`)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+		t.Fatalf("expected regexp to match www.example.com.")
+	}
+
+	if !node.Eval(newQueryMessage(t, "mail.example.com.", "1.1.1.1")) {
+		t.Fatalf("expected regexp to match mail.example.com.")
+	}
+
+	if node.Eval(newQueryMessage(t, "www.example.org.", "1.1.1.1")) {
+		t.Fatalf("expected regexp to not match www.example.org.")
+	}
+}
+
+func TestRegexpFilter_InvalidRegexp(t *testing.T) {
+	_, err := ParseFilterExpression(`regexp=[invalid`)
+	if err == nil {
+		t.Fatalf("expected error for invalid regexp")
+	}
+}
+
 func TestNotOperator_Simple(t *testing.T) {
 	node, err := ParseFilterExpression("not ip=1.1.1.1")
 	if err != nil {
