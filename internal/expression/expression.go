@@ -226,6 +226,12 @@ func parsePredicate(tok token) (filter.Node, error) {
 			return nil, fmt.Errorf("token %d at char %d ('%s'): unknown message type %q", tok.index, tok.pos, tok.lit, value)
 		}
 		return &filter.PredicateNode{Filter: f, Key: key, Value: value}, nil
+	case "regexp":
+		f, err := filter.NewRegexpFilter(value)
+		if err != nil {
+			return nil, fmt.Errorf("token %d at char %d ('%s'): invalid regexp: %w", tok.index, tok.pos, tok.lit, err)
+		}
+		return &filter.PredicateNode{Filter: f, Key: key, Value: value}, nil
 	default:
 		return nil, fmt.Errorf("token %d at char %d ('%s'): unknown predicate key '%s'", tok.index, tok.pos, tok.lit, key)
 	}
