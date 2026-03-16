@@ -115,6 +115,116 @@ func TestEvalContext_Reset(t *testing.T) {
 	}
 }
 
+// TestOptimizeTree_ResultsUnchanged verifies that OptimizeTree does not change
+// the evaluation result for various filter trees and messages.
+func TestOptimizeTree_ResultsUnchanged(t *testing.T) {
+	msgType := dnstap.Message_CLIENT_RESPONSE
+
+	messages := []struct {
+		name string
+		msg  dnstap.Message
+	}{
+		{
+			"query matching ip and suffix",
+			makeQueryMessage(t, "www.example.com.", "1.1.1.1"),
+		},
+		{
+			"query non-matching ip",
+			makeQueryMessage(t, "www.example.com.", "9.9.9.9"),
+		},
+		{
+			"query different domain",
+			makeQueryMessage(t, "other.example.org.", "1.1.1.1"),
+		},
+		{
+			"response message",
+			dnstap.Message{
+				Type:            &msgType,
+				ResponseAddress: net.ParseIP("1.1.1.1").To4(),
+				ResponseMessage: packQuery(t, "www.example.com.", dns.TypeA),
+			},
+		},
+		{
+			"nil query message",
+			dnstap.Message{
+				QueryAddress: net.ParseIP("1.1.1.1").To4(),
+				QueryMessage: nil,
+			},
+		},
+	}
+
+	trees := []struct {
+		name string
+		tree Node
+	}{
+		{
+			"suffix AND ip",
+			&AndNode{
+				Left:  &PredicateNode{Filter: NewSuffixFilter("example.com."), Key: "suffix", Value: "example.com."},
+				Right: &PredicateNode{Filter: NewIPFilter("1.1.1.1"), Key: "ip", Value: "1.1.1.1"},
+			},
+		},
+		{
+			"fqdn OR ip",
+			&OrNode{
+				Left:  &PredicateNode{Filter: NewFQDNFilter("www.example.com."), Key: "fqdn", Value: "www.example.com."},
+				Right: &PredicateNode{Filter: NewIPFilter("9.9.9.9"), Key: "ip", Value: "9.9.9.9"},
+			},
+		},
+		{
+			"(suffix AND qtype) OR ip",
+			&OrNode{
+				Left: &AndNode{
+					Left:  &PredicateNode{Filter: NewSuffixFilter("example.com."), Key: "suffix", Value: "example.com."},
+					Right: &PredicateNode{Filter: NewQtypeFilter("A"), Key: "qtype", Value: "A"},
+				},
+				Right: &PredicateNode{Filter: NewIPFilter("9.9.9.9"), Key: "ip", Value: "9.9.9.9"},
+			},
+		},
+		{
+			"NOT suffix AND ip",
+			&AndNode{
+				Left:  &NotNode{Child: &PredicateNode{Filter: NewSuffixFilter("example.org."), Key: "suffix", Value: "example.org."}},
+				Right: &PredicateNode{Filter: NewIPFilter("1.1.1.1"), Key: "ip", Value: "1.1.1.1"},
+			},
+		},
+		{
+			"ip AND suffix AND qtype (deep)",
+			&AndNode{
+				Left: &PredicateNode{Filter: NewSuffixFilter("example.com."), Key: "suffix", Value: "example.com."},
+				Right: &AndNode{
+					Left:  &PredicateNode{Filter: NewQtypeFilter("A"), Key: "qtype", Value: "A"},
+					Right: &PredicateNode{Filter: NewIPFilter("1.1.1.1"), Key: "ip", Value: "1.1.1.1"},
+				},
+			},
+		},
+		{
+			"msgtype AND fqdn",
+			&AndNode{
+				Left:  &PredicateNode{Filter: NewFQDNFilter("www.example.com."), Key: "fqdn", Value: "www.example.com."},
+				Right: &PredicateNode{Filter: NewMsgTypeFilter("CLIENT_RESPONSE"), Key: "msgtype", Value: "CLIENT_RESPONSE"},
+			},
+		},
+	}
+
+	for _, tc := range trees {
+		optimized := OptimizeTree(tc.tree)
+		for _, mc := range messages {
+			t.Run(tc.name+"/"+mc.name, func(t *testing.T) {
+				ctxOrig := NewEvalContext()
+				ctxOpt := NewEvalContext()
+
+				want := tc.tree.Eval(mc.msg, ctxOrig)
+				got := optimized.Eval(mc.msg, ctxOpt)
+
+				if got != want {
+					t.Fatalf("OptimizeTree changed result: original=%v optimized=%v", want, got)
+				}
+			})
+		}
+	}
+}
+
 // BenchmarkEval_SingleFilter benchmarks a single filter evaluation.
 func BenchmarkEval_SingleFilter(b *testing.B) {
 	msg := makeQueryMessage(b, "www.example.com.", "1.1.1.1")
