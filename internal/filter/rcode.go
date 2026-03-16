@@ -17,17 +17,15 @@ func NewRcodeFilter(a string) *RcodeFilter {
 	}
 }
 
-func (p *RcodeFilter) Filter(m dnstap.Message) bool {
-	if m.ResponseAddress != nil {
-		msg := new(dns.Msg)
-		err := msg.Unpack(m.ResponseMessage)
-		if err != nil {
-			return false
-		}
-
-		rcode := dns.RcodeToString[msg.Rcode]
-		return p.Rcode == rcode
-	} else {
+func (p *RcodeFilter) Filter(m dnstap.Message, ctx *EvalContext) bool {
+	if m.ResponseAddress == nil {
 		return false
 	}
+
+	msg := ctx.UnpackResponse(m)
+	if msg == nil {
+		return false
+	}
+
+	return p.Rcode == dns.RcodeToString[msg.Rcode]
 }

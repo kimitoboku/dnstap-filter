@@ -50,7 +50,7 @@ func ParseFilterExpression(expr string) (filter.Node, error) {
 		return nil, fmt.Errorf("token %d at char %d ('%s'): unexpected token", tok.index, tok.pos, tok.lit)
 	}
 
-	return node, nil
+	return filter.OptimizeTree(node), nil
 }
 
 func tokenize(input string) ([]token, error) {

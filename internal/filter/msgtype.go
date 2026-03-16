@@ -21,7 +21,7 @@ func NewMsgTypeFilter(typeName string) *MsgTypeFilter {
 	return &MsgTypeFilter{MsgType: val}
 }
 
-func (p *MsgTypeFilter) Filter(m dnstap.Message) bool {
+func (p *MsgTypeFilter) Filter(m dnstap.Message, _ *EvalContext) bool {
 	if m.Type == nil {
 		return false
 	}

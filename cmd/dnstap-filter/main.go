@@ -78,6 +78,7 @@ func dnstapFilter(outputChannel chan []byte, root filter.Node, countLimit int) (
 	go func() {
 		defer close(done)
 		dt := &dnstap.Dnstap{}
+		ctx := filter.NewEvalContext()
 		processed := 0
 		for frame := range inputChannel {
 			if countLimit > 0 && processed >= countLimit {
@@ -90,7 +91,8 @@ func dnstapFilter(outputChannel chan []byte, root filter.Node, countLimit int) (
 				break
 			}
 			if dt.Type != nil && *dt.Type == dnstap.Dnstap_MESSAGE && dt.Message != nil {
-				if !root.Eval(*dt.Message) {
+				ctx.Reset()
+				if !root.Eval(*dt.Message, ctx) {
 					continue
 				}
 			}

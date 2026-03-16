@@ -4,7 +4,6 @@ import (
 	"regexp"
 
 	"github.com/dnstap/golang-dnstap"
-	"github.com/miekg/dns"
 )
 
 type RegexpFilter struct {
@@ -21,18 +20,9 @@ func NewRegexpFilter(pattern string) (*RegexpFilter, error) {
 	}, nil
 }
 
-func (p *RegexpFilter) Filter(m dnstap.Message) bool {
-	var msgBytes []byte
-	if m.QueryMessage != nil {
-		msgBytes = m.QueryMessage
-	} else if m.ResponseMessage != nil {
-		msgBytes = m.ResponseMessage
-	} else {
-		return false
-	}
-
-	msg := new(dns.Msg)
-	if err := msg.Unpack(msgBytes); err != nil {
+func (p *RegexpFilter) Filter(m dnstap.Message, ctx *EvalContext) bool {
+	msg := ctx.UnpackQueryOrResponse(m)
+	if msg == nil {
 		return false
 	}
 
@@ -40,6 +30,5 @@ func (p *RegexpFilter) Filter(m dnstap.Message) bool {
 		return false
 	}
 
-	questionName := msg.Question[0].Name
-	return p.Re.MatchString(questionName)
+	return p.Re.MatchString(msg.Question[0].Name)
 }
