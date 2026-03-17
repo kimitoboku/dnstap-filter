@@ -2,7 +2,6 @@ package filter
 
 import (
 	"github.com/dnstap/golang-dnstap"
-	"github.com/miekg/dns"
 )
 
 type FQDNFilter struct {
@@ -15,18 +14,9 @@ func NewFQDNFilter(a string) *FQDNFilter {
 	}
 }
 
-func (p *FQDNFilter) Filter(m dnstap.Message) bool {
-	var msgBytes []byte
-	if m.QueryMessage != nil {
-		msgBytes = m.QueryMessage
-	} else if m.ResponseMessage != nil {
-		msgBytes = m.ResponseMessage
-	} else {
-		return false
-	}
-
-	msg := new(dns.Msg)
-	if err := msg.Unpack(msgBytes); err != nil {
+func (p *FQDNFilter) Filter(m dnstap.Message, ctx *EvalContext) bool {
+	msg := ctx.UnpackQueryOrResponse(m)
+	if msg == nil {
 		return false
 	}
 
@@ -34,6 +24,5 @@ func (p *FQDNFilter) Filter(m dnstap.Message) bool {
 		return false
 	}
 
-	questionName := msg.Question[0].Name
-	return p.FQDN == questionName
+	return p.FQDN == msg.Question[0].Name
 }

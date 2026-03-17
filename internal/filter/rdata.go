@@ -45,13 +45,13 @@ func NewRdataFilter(value string) (*RdataFilter, error) {
 	return &RdataFilter{mode: rdataModeTXT, text: value}, nil
 }
 
-func (p *RdataFilter) Filter(m dnstap.Message) bool {
+func (p *RdataFilter) Filter(m dnstap.Message, ctx *EvalContext) bool {
 	if m.ResponseMessage == nil {
 		return false
 	}
 
-	msg := new(dns.Msg)
-	if err := msg.Unpack(m.ResponseMessage); err != nil {
+	msg := ctx.UnpackResponse(m)
+	if msg == nil {
 		return false
 	}
 

@@ -17,7 +17,7 @@ func NewIPFilter(a string) *IPFilter {
 	}
 }
 
-func (p *IPFilter) Filter(m dnstap.Message) bool {
+func (p *IPFilter) Filter(m dnstap.Message, _ *EvalContext) bool {
 	if m.QueryAddress == nil {
 		return false
 	}

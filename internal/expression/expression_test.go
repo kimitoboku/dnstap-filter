@@ -17,7 +17,7 @@ func TestParseFilterExpression_SinglePredicate(t *testing.T) {
 	}
 
 	msg := newQueryMessage(t, "www.example.com.", "1.1.1.1")
-	if !node.Eval(msg) {
+	if !node.Eval(msg, filter.NewEvalContext()) {
 		t.Fatalf("expected node to match")
 	}
 }
@@ -29,7 +29,7 @@ func TestParseFilterExpression_OperatorPrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error for node1: %v", err)
 	}
-	if !node1.Eval(msg) {
+	if !node1.Eval(msg, filter.NewEvalContext()) {
 		t.Fatalf("expected expression with precedence to be true")
 	}
 
@@ -37,7 +37,7 @@ func TestParseFilterExpression_OperatorPrecedence(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error for node2: %v", err)
 	}
-	if node2.Eval(msg) {
+	if node2.Eval(msg, filter.NewEvalContext()) {
 		t.Fatalf("expected parenthesized expression to be false")
 	}
 }
@@ -49,7 +49,7 @@ func TestParseFilterExpression_CaseInsensitiveOperators(t *testing.T) {
 	}
 
 	msg := newQueryMessage(t, "www.example.com.", "1.1.1.1")
-	if !node.Eval(msg) {
+	if !node.Eval(msg, filter.NewEvalContext()) {
 		t.Fatalf("expected expression to match")
 	}
 }
@@ -60,7 +60,7 @@ func TestParseFilterExpression_EmptyMatchesAll(t *testing.T) {
 		t.Fatalf("unexpected error for empty expression: %v", err)
 	}
 	msg := newQueryMessage(t, "www.example.com.", "1.1.1.1")
-	if !node.Eval(msg) {
+	if !node.Eval(msg, filter.NewEvalContext()) {
 		t.Fatalf("expected empty expression to match all messages")
 	}
 }
@@ -91,7 +91,7 @@ func TestParseFilterExpression_AllPredicates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected parse error: %v", err)
 	}
-	if !queryNode.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+	if !queryNode.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1"), filter.NewEvalContext()) {
 		t.Fatalf("expected query predicates to match")
 	}
 
@@ -99,7 +99,7 @@ func TestParseFilterExpression_AllPredicates(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected parse error: %v", err)
 	}
-	if !rcodeNode.Eval(newResponseMessage(t, "www.example.com.", "1.1.1.1", dns.RcodeNameError)) {
+	if !rcodeNode.Eval(newResponseMessage(t, "www.example.com.", "1.1.1.1", dns.RcodeNameError), filter.NewEvalContext()) {
 		t.Fatalf("expected rcode predicate to match")
 	}
 }
@@ -135,7 +135,7 @@ func TestParseFilterExpression_SuffixOrDoesNotMatchInvalidDNSPayload(t *testing.
 		QueryAddress: net.ParseIP("1.1.1.1").To4(),
 		QueryMessage: nil,
 	}
-	if node.Eval(msg) {
+	if node.Eval(msg, filter.NewEvalContext()) {
 		t.Fatalf("expected false for invalid DNS payload, got true")
 	}
 }
@@ -146,12 +146,12 @@ func TestIPFilter_QueryAddressOnly(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+	if !node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1"), filter.NewEvalContext()) {
 		t.Fatalf("expected ip filter to match QueryAddress")
 	}
 
 	// ResponseAddress only must NOT match (breaking change)
-	if node.Eval(newResponseMessage(t, "www.example.com.", "1.1.1.1", dns.RcodeSuccess)) {
+	if node.Eval(newResponseMessage(t, "www.example.com.", "1.1.1.1", dns.RcodeSuccess), filter.NewEvalContext()) {
 		t.Fatalf("ip filter must not match ResponseAddress")
 	}
 }
@@ -162,11 +162,11 @@ func TestSubnetFilter_Match(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !node.Eval(newQueryMessage(t, "www.example.com.", "192.168.1.42")) {
+	if !node.Eval(newQueryMessage(t, "www.example.com.", "192.168.1.42"), filter.NewEvalContext()) {
 		t.Fatalf("expected subnet filter to match IP inside range")
 	}
 
-	if node.Eval(newQueryMessage(t, "www.example.com.", "192.168.2.1")) {
+	if node.Eval(newQueryMessage(t, "www.example.com.", "192.168.2.1"), filter.NewEvalContext()) {
 		t.Fatalf("expected subnet filter to not match IP outside range")
 	}
 }
@@ -195,11 +195,11 @@ func TestQtypeFilter_Match(t *testing.T) {
 		QueryMessage: payload,
 	}
 
-	if !node.Eval(dnstapMsg) {
+	if !node.Eval(dnstapMsg, filter.NewEvalContext()) {
 		t.Fatalf("expected qtype=AAAA to match AAAA query")
 	}
 
-	if node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+	if node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1"), filter.NewEvalContext()) {
 		t.Fatalf("expected qtype=AAAA to not match A query")
 	}
 }
@@ -226,13 +226,13 @@ func TestRdataFilter_IPMatch(t *testing.T) {
 
 	aRR, _ := dns.NewRR("www.example.com. 300 IN A 93.184.216.34")
 	msg := newResponseMessageWithAnswers(t, "www.example.com.", "1.1.1.1", []dns.RR{aRR})
-	if !node.Eval(msg) {
+	if !node.Eval(msg, filter.NewEvalContext()) {
 		t.Fatalf("expected rdata IP filter to match A record")
 	}
 
 	aRR2, _ := dns.NewRR("www.example.com. 300 IN A 1.2.3.4")
 	msg2 := newResponseMessageWithAnswers(t, "www.example.com.", "1.1.1.1", []dns.RR{aRR2})
-	if node.Eval(msg2) {
+	if node.Eval(msg2, filter.NewEvalContext()) {
 		t.Fatalf("expected rdata IP filter to not match different A record")
 	}
 }
@@ -245,13 +245,13 @@ func TestRdataFilter_SubnetMatch(t *testing.T) {
 
 	aRR, _ := dns.NewRR("host.example.com. 300 IN A 10.42.1.5")
 	msg := newResponseMessageWithAnswers(t, "host.example.com.", "1.1.1.1", []dns.RR{aRR})
-	if !node.Eval(msg) {
+	if !node.Eval(msg, filter.NewEvalContext()) {
 		t.Fatalf("expected rdata subnet filter to match A record in range")
 	}
 
 	aRR2, _ := dns.NewRR("host.example.com. 300 IN A 192.168.1.1")
 	msg2 := newResponseMessageWithAnswers(t, "host.example.com.", "1.1.1.1", []dns.RR{aRR2})
-	if node.Eval(msg2) {
+	if node.Eval(msg2, filter.NewEvalContext()) {
 		t.Fatalf("expected rdata subnet filter to not match A record outside range")
 	}
 }
@@ -264,7 +264,7 @@ func TestRdataFilter_TXTMatch(t *testing.T) {
 
 	txtRR, _ := dns.NewRR(`example.com. 300 IN TXT "v=spf1 include:example.net ~all"`)
 	msg := newResponseMessageWithAnswers(t, "example.com.", "1.1.1.1", []dns.RR{txtRR})
-	if !node.Eval(msg) {
+	if !node.Eval(msg, filter.NewEvalContext()) {
 		t.Fatalf("expected rdata TXT filter to match substring")
 	}
 }
@@ -275,7 +275,7 @@ func TestRdataFilter_NoMatchOnQueryMessage(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+	if node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1"), filter.NewEvalContext()) {
 		t.Fatalf("rdata filter must not match query messages")
 	}
 }
@@ -294,12 +294,12 @@ func TestMsgtypeFilter_Match(t *testing.T) {
 	}
 
 	clientQuery := newTypedMessage(t, "www.example.com.", "1.1.1.1", dns.TypeA, dnstap.Message_CLIENT_QUERY)
-	if !node.Eval(clientQuery) {
+	if !node.Eval(clientQuery, filter.NewEvalContext()) {
 		t.Fatalf("expected msgtype=CLIENT_QUERY to match CLIENT_QUERY message")
 	}
 
 	clientResponse := newTypedMessage(t, "www.example.com.", "1.1.1.1", dns.TypeA, dnstap.Message_CLIENT_RESPONSE)
-	if node.Eval(clientResponse) {
+	if node.Eval(clientResponse, filter.NewEvalContext()) {
 		t.Fatalf("expected msgtype=CLIENT_QUERY to not match CLIENT_RESPONSE")
 	}
 }
@@ -324,11 +324,11 @@ func TestRegexpFilter_Match(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+	if !node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1"), filter.NewEvalContext()) {
 		t.Fatalf("expected regexp to match www.example.com.")
 	}
 
-	if node.Eval(newQueryMessage(t, "mail.example.com.", "1.1.1.1")) {
+	if node.Eval(newQueryMessage(t, "mail.example.com.", "1.1.1.1"), filter.NewEvalContext()) {
 		t.Fatalf("expected regexp to not match mail.example.com.")
 	}
 }
@@ -339,15 +339,15 @@ func TestRegexpFilter_PartialMatch(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+	if !node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1"), filter.NewEvalContext()) {
 		t.Fatalf("expected regexp to match www.example.com.")
 	}
 
-	if !node.Eval(newQueryMessage(t, "mail.example.com.", "1.1.1.1")) {
+	if !node.Eval(newQueryMessage(t, "mail.example.com.", "1.1.1.1"), filter.NewEvalContext()) {
 		t.Fatalf("expected regexp to match mail.example.com.")
 	}
 
-	if node.Eval(newQueryMessage(t, "www.example.org.", "1.1.1.1")) {
+	if node.Eval(newQueryMessage(t, "www.example.org.", "1.1.1.1"), filter.NewEvalContext()) {
 		t.Fatalf("expected regexp to not match www.example.org.")
 	}
 }
@@ -365,10 +365,10 @@ func TestNotOperator_Simple(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+	if node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1"), filter.NewEvalContext()) {
 		t.Fatalf("expected not ip=1.1.1.1 to NOT match 1.1.1.1")
 	}
-	if !node.Eval(newQueryMessage(t, "www.example.com.", "2.2.2.2")) {
+	if !node.Eval(newQueryMessage(t, "www.example.com.", "2.2.2.2"), filter.NewEvalContext()) {
 		t.Fatalf("expected not ip=1.1.1.1 to match 2.2.2.2")
 	}
 }
@@ -379,13 +379,13 @@ func TestNotOperator_WithGroup(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+	if node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1"), filter.NewEvalContext()) {
 		t.Fatalf("expected not (ip=1.1.1.1 or ip=2.2.2.2) to NOT match 1.1.1.1")
 	}
-	if node.Eval(newQueryMessage(t, "www.example.com.", "2.2.2.2")) {
+	if node.Eval(newQueryMessage(t, "www.example.com.", "2.2.2.2"), filter.NewEvalContext()) {
 		t.Fatalf("expected not (ip=1.1.1.1 or ip=2.2.2.2) to NOT match 2.2.2.2")
 	}
-	if !node.Eval(newQueryMessage(t, "www.example.com.", "3.3.3.3")) {
+	if !node.Eval(newQueryMessage(t, "www.example.com.", "3.3.3.3"), filter.NewEvalContext()) {
 		t.Fatalf("expected not (ip=1.1.1.1 or ip=2.2.2.2) to match 3.3.3.3")
 	}
 }
@@ -396,10 +396,10 @@ func TestNotOperator_CombinedWithAnd(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+	if node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1"), filter.NewEvalContext()) {
 		t.Fatalf("expected to NOT match when ip=1.1.1.1")
 	}
-	if !node.Eval(newQueryMessage(t, "www.example.com.", "2.2.2.2")) {
+	if !node.Eval(newQueryMessage(t, "www.example.com.", "2.2.2.2"), filter.NewEvalContext()) {
 		t.Fatalf("expected to match when ip=2.2.2.2 and suffix matches")
 	}
 }
@@ -410,10 +410,10 @@ func TestNotOperator_DoubleNegation(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if !node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+	if !node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1"), filter.NewEvalContext()) {
 		t.Fatalf("expected not not ip=1.1.1.1 to match 1.1.1.1")
 	}
-	if node.Eval(newQueryMessage(t, "www.example.com.", "2.2.2.2")) {
+	if node.Eval(newQueryMessage(t, "www.example.com.", "2.2.2.2"), filter.NewEvalContext()) {
 		t.Fatalf("expected not not ip=1.1.1.1 to NOT match 2.2.2.2")
 	}
 }
@@ -424,7 +424,7 @@ func TestNotOperator_CaseInsensitive(t *testing.T) {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
-	if node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1")) {
+	if node.Eval(newQueryMessage(t, "www.example.com.", "1.1.1.1"), filter.NewEvalContext()) {
 		t.Fatalf("expected NOT to work case-insensitively")
 	}
 }

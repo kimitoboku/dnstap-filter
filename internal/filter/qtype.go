@@ -21,18 +21,9 @@ func NewQtypeFilter(typeName string) *QtypeFilter {
 	return &QtypeFilter{Qtype: t}
 }
 
-func (p *QtypeFilter) Filter(m dnstap.Message) bool {
-	var msgBytes []byte
-	if m.QueryMessage != nil {
-		msgBytes = m.QueryMessage
-	} else if m.ResponseMessage != nil {
-		msgBytes = m.ResponseMessage
-	} else {
-		return false
-	}
-
-	msg := new(dns.Msg)
-	if err := msg.Unpack(msgBytes); err != nil {
+func (p *QtypeFilter) Filter(m dnstap.Message, ctx *EvalContext) bool {
+	msg := ctx.UnpackQueryOrResponse(m)
+	if msg == nil {
 		return false
 	}
 
