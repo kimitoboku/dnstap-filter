@@ -4,6 +4,7 @@ go 1.25.0
 
 require (
 	github.com/dnstap/golang-dnstap v0.4.0
+	github.com/gopacket/gopacket v1.5.0
 	github.com/miekg/dns v1.1.42
 	google.golang.org/protobuf v1.26.0
 )

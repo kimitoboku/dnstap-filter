@@ -25,7 +25,7 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 	fs := flag.NewFlagSet("dnstap-filter", flag.ContinueOnError)
 	fs.SetOutput(os.Stderr)
 
-	in := fs.String("in", "", "input spec: file:<path> | unix:<path> | tcp:<host:port>")
+	in := fs.String("in", "", "input spec: file:<path> | unix:<path> | tcp:<host:port> | pcap:<path>")
 	out := fs.String("out", "", "output spec: file:<path> | unix:<path> | tcp:<host:port> | yaml:<path>|yaml:-\n\t(default: print query name, type and time to stdout)")
 	filterExpr := fs.String("filter", "", "filter expression (omit to match all)\n"+
 		"\tPredicates:\n"+

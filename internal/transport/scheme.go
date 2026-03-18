@@ -12,6 +12,7 @@ const (
 	schemeUnix scheme = "unix"
 	schemeTCP  scheme = "tcp"
 	schemeYAML scheme = "yaml"
+	schemePcap scheme = "pcap"
 )
 
 var knownSchemes = map[scheme]bool{
@@ -19,6 +20,7 @@ var knownSchemes = map[scheme]bool{
 	schemeUnix: true,
 	schemeTCP:  true,
 	schemeYAML: true,
+	schemePcap: true,
 }
 
 type uri struct {
@@ -36,7 +38,7 @@ func parseURI(spec string) (uri, error) {
 		if knownSchemes[s] {
 			return uri{scheme: s, address: parts[1]}, nil
 		}
-		return uri{}, fmt.Errorf("unknown transport scheme %q (valid: file, unix, tcp, yaml)", parts[0])
+		return uri{}, fmt.Errorf("unknown transport scheme %q (valid: file, unix, tcp, yaml, pcap)", parts[0])
 	}
 	// No colon: treat as file path (backward compatibility).
 	return uri{scheme: schemeFile, address: spec}, nil
