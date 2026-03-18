@@ -4,6 +4,7 @@ import (
 	"net"
 	"os"
 	"path/filepath"
+	"sort"
 	"testing"
 	"time"
 
@@ -279,5 +280,220 @@ func TestPcapInput_IPv6(t *testing.T) {
 	}
 	if !net.IP(dt.Message.QueryAddress).Equal(net.ParseIP("2001:db8::1")) {
 		t.Errorf("query address = %v, want 2001:db8::1", net.IP(dt.Message.QueryAddress))
+	}
+}
+
+// readAllFrames reads a pcap file through PcapInput and returns all dnstap frames.
+func readAllFrames(t *testing.T, path string) []*dnstap.Dnstap {
+	t.Helper()
+	input, err := NewPcapInput(path)
+	if err != nil {
+		t.Fatalf("NewPcapInput(%s): %v", path, err)
+	}
+	ch := make(chan []byte, 32)
+	go input.ReadInto(ch)
+	input.Wait()
+	close(ch)
+
+	var results []*dnstap.Dnstap
+	for frame := range ch {
+		dt := &dnstap.Dnstap{}
+		if err := proto.Unmarshal(frame, dt); err != nil {
+			t.Fatalf("unmarshal: %v", err)
+		}
+		results = append(results, dt)
+	}
+	return results
+}
+
+// examplePcapPath returns the path to example/dns_test.pcap relative to the
+// repository root. It skips the test if the file is not found.
+func examplePcapPath(t *testing.T) string {
+	t.Helper()
+	// The test binary runs from the package directory. Walk up to find the
+	// repository root containing the example/ directory.
+	candidates := []string{
+		"../../example/dns_test.pcap",
+	}
+	for _, p := range candidates {
+		if _, err := os.Stat(p); err == nil {
+			return p
+		}
+	}
+	t.Skip("example/dns_test.pcap not found; skipping")
+	return ""
+}
+
+func TestExamplePcap_FrameCount(t *testing.T) {
+	path := examplePcapPath(t)
+	frames := readAllFrames(t, path)
+
+	// example/dns_test.pcap contains 4 query/response pairs = 8 packets.
+	if len(frames) != 8 {
+		t.Fatalf("expected 8 frames, got %d", len(frames))
+	}
+
+	queries := 0
+	responses := 0
+	for _, dt := range frames {
+		switch *dt.Message.Type {
+		case dnstap.Message_CLIENT_QUERY:
+			queries++
+		case dnstap.Message_CLIENT_RESPONSE:
+			responses++
+		}
+	}
+	if queries != 4 {
+		t.Errorf("expected 4 CLIENT_QUERY, got %d", queries)
+	}
+	if responses != 4 {
+		t.Errorf("expected 4 CLIENT_RESPONSE, got %d", responses)
+	}
+}
+
+func TestExamplePcap_QueryNames(t *testing.T) {
+	path := examplePcapPath(t)
+	frames := readAllFrames(t, path)
+
+	nameSet := map[string]bool{}
+	for _, dt := range frames {
+		msg := new(dns.Msg)
+		if err := msg.Unpack(dt.Message.QueryMessage); err != nil {
+			t.Fatalf("unpack: %v", err)
+		}
+		if len(msg.Question) > 0 {
+			nameSet[msg.Question[0].Name] = true
+		}
+	}
+
+	expected := []string{"example.com.", "www.google.com.", "nxdomain.example.com."}
+	for _, name := range expected {
+		if !nameSet[name] {
+			t.Errorf("expected query name %q not found in pcap", name)
+		}
+	}
+}
+
+func TestExamplePcap_QueryTypes(t *testing.T) {
+	path := examplePcapPath(t)
+	frames := readAllFrames(t, path)
+
+	typeSet := map[uint16]bool{}
+	for _, dt := range frames {
+		msg := new(dns.Msg)
+		if err := msg.Unpack(dt.Message.QueryMessage); err != nil {
+			t.Fatalf("unpack: %v", err)
+		}
+		if len(msg.Question) > 0 {
+			typeSet[msg.Question[0].Qtype] = true
+		}
+	}
+
+	if !typeSet[dns.TypeA] {
+		t.Error("expected A query type in pcap")
+	}
+	if !typeSet[dns.TypeAAAA] {
+		t.Error("expected AAAA query type in pcap")
+	}
+}
+
+func TestExamplePcap_ResponseAddress(t *testing.T) {
+	path := examplePcapPath(t)
+	frames := readAllFrames(t, path)
+
+	for _, dt := range frames {
+		if *dt.Message.Type != dnstap.Message_CLIENT_RESPONSE {
+			continue
+		}
+		if dt.Message.ResponseAddress == nil {
+			t.Error("CLIENT_RESPONSE has nil ResponseAddress")
+		}
+		if dt.Message.QueryAddress == nil {
+			t.Error("CLIENT_RESPONSE has nil QueryAddress")
+		}
+	}
+}
+
+func TestExamplePcap_ClientIPs(t *testing.T) {
+	path := examplePcapPath(t)
+	frames := readAllFrames(t, path)
+
+	ipSet := map[string]bool{}
+	for _, dt := range frames {
+		if dt.Message.QueryAddress != nil {
+			ipSet[net.IP(dt.Message.QueryAddress).String()] = true
+		}
+	}
+
+	// The example pcap has clients 192.168.1.100 and 10.0.0.50.
+	if !ipSet["192.168.1.100"] {
+		t.Error("expected client IP 192.168.1.100")
+	}
+	if !ipSet["10.0.0.50"] {
+		t.Error("expected client IP 10.0.0.50")
+	}
+}
+
+func TestExamplePcap_NXDOMAINResponse(t *testing.T) {
+	path := examplePcapPath(t)
+	frames := readAllFrames(t, path)
+
+	found := false
+	for _, dt := range frames {
+		if *dt.Message.Type != dnstap.Message_CLIENT_RESPONSE {
+			continue
+		}
+		msg := new(dns.Msg)
+		if err := msg.Unpack(dt.Message.ResponseMessage); err != nil {
+			continue
+		}
+		if msg.Rcode == dns.RcodeNameError {
+			found = true
+			// Verify the NXDOMAIN is for the expected query name.
+			if len(msg.Question) > 0 && msg.Question[0].Name != "nxdomain.example.com." {
+				t.Errorf("NXDOMAIN query name = %s, want nxdomain.example.com.", msg.Question[0].Name)
+			}
+		}
+	}
+	if !found {
+		t.Error("expected NXDOMAIN response in pcap")
+	}
+}
+
+func TestExamplePcap_Timestamps(t *testing.T) {
+	path := examplePcapPath(t)
+	frames := readAllFrames(t, path)
+
+	type ts struct {
+		sec  uint64
+		nsec uint32
+	}
+
+	// Collect all timestamps and verify they are monotonically non-decreasing.
+	var timestamps []ts
+	for _, dt := range frames {
+		msg := dt.Message
+		if msg.QueryTimeSec != nil {
+			nsec := uint32(0)
+			if msg.QueryTimeNsec != nil {
+				nsec = *msg.QueryTimeNsec
+			}
+			timestamps = append(timestamps, ts{*msg.QueryTimeSec, nsec})
+		} else if msg.ResponseTimeSec != nil {
+			nsec := uint32(0)
+			if msg.ResponseTimeNsec != nil {
+				nsec = *msg.ResponseTimeNsec
+			}
+			timestamps = append(timestamps, ts{*msg.ResponseTimeSec, nsec})
+		}
+	}
+
+	if !sort.SliceIsSorted(timestamps, func(i, j int) bool {
+		if timestamps[i].sec != timestamps[j].sec {
+			return timestamps[i].sec < timestamps[j].sec
+		}
+		return timestamps[i].nsec <= timestamps[j].nsec
+	}) {
+		t.Errorf("timestamps are not monotonically non-decreasing: %v", timestamps)
 	}
 }
