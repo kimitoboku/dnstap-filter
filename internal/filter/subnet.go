@@ -18,7 +18,7 @@ func NewSubnetFilter(cidr string) *SubnetFilter {
 	return &SubnetFilter{Net: ipNet}
 }
 
-func (p *SubnetFilter) Filter(m dnstap.Message, _ *EvalContext) bool {
+func (p *SubnetFilter) Filter(m *dnstap.Message, _ *EvalContext) bool {
 	if m.QueryAddress == nil {
 		return false
 	}

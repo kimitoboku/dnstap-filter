@@ -45,7 +45,7 @@ func NewRdataFilter(value string) (*RdataFilter, error) {
 	return &RdataFilter{mode: rdataModeTXT, text: value}, nil
 }
 
-func (p *RdataFilter) Filter(m dnstap.Message, ctx *EvalContext) bool {
+func (p *RdataFilter) Filter(m *dnstap.Message, ctx *EvalContext) bool {
 	if m.ResponseMessage == nil {
 		return false
 	}

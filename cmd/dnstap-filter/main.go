@@ -92,7 +92,7 @@ func dnstapFilter(outputChannel chan []byte, root filter.Node, countLimit int) (
 			}
 			if dt.Type != nil && *dt.Type == dnstap.Dnstap_MESSAGE && dt.Message != nil {
 				ctx.Reset()
-				if !root.Eval(*dt.Message, ctx) {
+				if !root.Eval(dt.Message, ctx) {
 					continue
 				}
 			}

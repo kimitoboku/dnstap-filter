@@ -17,7 +17,7 @@ func NewRcodeFilter(a string) *RcodeFilter {
 	}
 }
 
-func (p *RcodeFilter) Filter(m dnstap.Message, ctx *EvalContext) bool {
+func (p *RcodeFilter) Filter(m *dnstap.Message, ctx *EvalContext) bool {
 	if m.ResponseAddress == nil {
 		return false
 	}

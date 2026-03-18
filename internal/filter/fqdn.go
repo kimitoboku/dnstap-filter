@@ -14,7 +14,7 @@ func NewFQDNFilter(a string) *FQDNFilter {
 	}
 }
 
-func (p *FQDNFilter) Filter(m dnstap.Message, ctx *EvalContext) bool {
+func (p *FQDNFilter) Filter(m *dnstap.Message, ctx *EvalContext) bool {
 	msg := ctx.UnpackQueryOrResponse(m)
 	if msg == nil {
 		return false

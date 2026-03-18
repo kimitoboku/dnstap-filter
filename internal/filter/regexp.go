@@ -20,7 +20,7 @@ func NewRegexpFilter(pattern string) (*RegexpFilter, error) {
 	}, nil
 }
 
-func (p *RegexpFilter) Filter(m dnstap.Message, ctx *EvalContext) bool {
+func (p *RegexpFilter) Filter(m *dnstap.Message, ctx *EvalContext) bool {
 	msg := ctx.UnpackQueryOrResponse(m)
 	if msg == nil {
 		return false
