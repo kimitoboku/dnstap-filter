@@ -16,7 +16,7 @@ func NewSuffixFilter(a string) *SuffixFilter {
 	}
 }
 
-func (p *SuffixFilter) Filter(m dnstap.Message, ctx *EvalContext) bool {
+func (p *SuffixFilter) Filter(m *dnstap.Message, ctx *EvalContext) bool {
 	msg := ctx.UnpackQueryOrResponse(m)
 	if msg == nil {
 		return false

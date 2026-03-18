@@ -131,7 +131,7 @@ func TestParseFilterExpression_SuffixOrDoesNotMatchInvalidDNSPayload(t *testing.
 		t.Fatalf("unexpected parse error: %v", err)
 	}
 
-	msg := dnstap.Message{
+	msg := &dnstap.Message{
 		QueryAddress: net.ParseIP("1.1.1.1").To4(),
 		QueryMessage: nil,
 	}
@@ -190,7 +190,7 @@ func TestQtypeFilter_Match(t *testing.T) {
 	if err != nil {
 		t.Fatalf("failed to pack: %v", err)
 	}
-	dnstapMsg := dnstap.Message{
+	dnstapMsg := &dnstap.Message{
 		QueryAddress: net.ParseIP("1.1.1.1").To4(),
 		QueryMessage: payload,
 	}
@@ -459,7 +459,7 @@ func TestFormatTree_WithNot(t *testing.T) {
 	}
 }
 
-func newResponseMessageWithAnswers(t *testing.T, name string, ip string, answers []dns.RR) dnstap.Message {
+func newResponseMessageWithAnswers(t *testing.T, name string, ip string, answers []dns.RR) *dnstap.Message {
 	t.Helper()
 
 	msg := new(dns.Msg)
@@ -471,14 +471,14 @@ func newResponseMessageWithAnswers(t *testing.T, name string, ip string, answers
 	}
 
 	msgType := dnstap.Message_CLIENT_RESPONSE
-	return dnstap.Message{
+	return &dnstap.Message{
 		Type:            &msgType,
 		ResponseAddress: net.ParseIP(ip).To4(),
 		ResponseMessage: payload,
 	}
 }
 
-func newTypedMessage(t *testing.T, name string, ip string, qtype uint16, msgType dnstap.Message_Type) dnstap.Message {
+func newTypedMessage(t *testing.T, name string, ip string, qtype uint16, msgType dnstap.Message_Type) *dnstap.Message {
 	t.Helper()
 
 	msg := new(dns.Msg)
@@ -488,14 +488,14 @@ func newTypedMessage(t *testing.T, name string, ip string, qtype uint16, msgType
 		t.Fatalf("failed to pack message: %v", err)
 	}
 
-	return dnstap.Message{
+	return &dnstap.Message{
 		Type:         &msgType,
 		QueryAddress: net.ParseIP(ip).To4(),
 		QueryMessage: payload,
 	}
 }
 
-func newQueryMessage(t *testing.T, name string, ip string) dnstap.Message {
+func newQueryMessage(t *testing.T, name string, ip string) *dnstap.Message {
 	t.Helper()
 
 	msg := new(dns.Msg)
@@ -505,13 +505,13 @@ func newQueryMessage(t *testing.T, name string, ip string) dnstap.Message {
 		t.Fatalf("failed to pack query message: %v", err)
 	}
 
-	return dnstap.Message{
+	return &dnstap.Message{
 		QueryAddress: net.ParseIP(ip).To4(),
 		QueryMessage: payload,
 	}
 }
 
-func newResponseMessage(t *testing.T, name string, ip string, rcode int) dnstap.Message {
+func newResponseMessage(t *testing.T, name string, ip string, rcode int) *dnstap.Message {
 	t.Helper()
 
 	msg := new(dns.Msg)
@@ -522,7 +522,7 @@ func newResponseMessage(t *testing.T, name string, ip string, rcode int) dnstap.
 		t.Fatalf("failed to pack response message: %v", err)
 	}
 
-	return dnstap.Message{
+	return &dnstap.Message{
 		ResponseAddress: net.ParseIP(ip).To4(),
 		ResponseMessage: payload,
 	}

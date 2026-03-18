@@ -31,7 +31,7 @@ func (ctx *EvalContext) Reset() {
 }
 
 // UnpackQuery returns the parsed query DNS message, caching the result.
-func (ctx *EvalContext) UnpackQuery(m dnstap.Message) *dns.Msg {
+func (ctx *EvalContext) UnpackQuery(m *dnstap.Message) *dns.Msg {
 	if ctx.queryUnpacked {
 		return ctx.queryMsg
 	}
@@ -48,7 +48,7 @@ func (ctx *EvalContext) UnpackQuery(m dnstap.Message) *dns.Msg {
 }
 
 // UnpackResponse returns the parsed response DNS message, caching the result.
-func (ctx *EvalContext) UnpackResponse(m dnstap.Message) *dns.Msg {
+func (ctx *EvalContext) UnpackResponse(m *dnstap.Message) *dns.Msg {
 	if ctx.responseUnpacked {
 		return ctx.responseMsg
 	}
@@ -66,7 +66,7 @@ func (ctx *EvalContext) UnpackResponse(m dnstap.Message) *dns.Msg {
 
 // UnpackQueryOrResponse returns the parsed query message if available,
 // otherwise the response message.
-func (ctx *EvalContext) UnpackQueryOrResponse(m dnstap.Message) *dns.Msg {
+func (ctx *EvalContext) UnpackQueryOrResponse(m *dnstap.Message) *dns.Msg {
 	if m.QueryMessage != nil {
 		return ctx.UnpackQuery(m)
 	}
@@ -74,11 +74,11 @@ func (ctx *EvalContext) UnpackQueryOrResponse(m dnstap.Message) *dns.Msg {
 }
 
 type DnstapFilterFunc interface {
-	Filter(msg dnstap.Message, ctx *EvalContext) bool
+	Filter(msg *dnstap.Message, ctx *EvalContext) bool
 }
 
 type Node interface {
-	Eval(msg dnstap.Message, ctx *EvalContext) bool
+	Eval(msg *dnstap.Message, ctx *EvalContext) bool
 }
 
 type PredicateNode struct {
@@ -87,7 +87,7 @@ type PredicateNode struct {
 	Value  string
 }
 
-func (n *PredicateNode) Eval(msg dnstap.Message, ctx *EvalContext) bool {
+func (n *PredicateNode) Eval(msg *dnstap.Message, ctx *EvalContext) bool {
 	if n == nil || n.Filter == nil {
 		return false
 	}
@@ -99,7 +99,7 @@ type AndNode struct {
 	Right Node
 }
 
-func (n *AndNode) Eval(msg dnstap.Message, ctx *EvalContext) bool {
+func (n *AndNode) Eval(msg *dnstap.Message, ctx *EvalContext) bool {
 	if n == nil || n.Left == nil || n.Right == nil {
 		return false
 	}
@@ -111,7 +111,7 @@ type OrNode struct {
 	Right Node
 }
 
-func (n *OrNode) Eval(msg dnstap.Message, ctx *EvalContext) bool {
+func (n *OrNode) Eval(msg *dnstap.Message, ctx *EvalContext) bool {
 	if n == nil || n.Left == nil || n.Right == nil {
 		return false
 	}
@@ -122,7 +122,7 @@ type NotNode struct {
 	Child Node
 }
 
-func (n *NotNode) Eval(msg dnstap.Message, ctx *EvalContext) bool {
+func (n *NotNode) Eval(msg *dnstap.Message, ctx *EvalContext) bool {
 	if n == nil || n.Child == nil {
 		return false
 	}
@@ -131,7 +131,7 @@ func (n *NotNode) Eval(msg dnstap.Message, ctx *EvalContext) bool {
 
 type MatchAllNode struct{}
 
-func (n *MatchAllNode) Eval(_ dnstap.Message, _ *EvalContext) bool {
+func (n *MatchAllNode) Eval(_ *dnstap.Message, _ *EvalContext) bool {
 	return true
 }
 

@@ -19,9 +19,9 @@ func packQuery(t testing.TB, name string, qtype uint16) []byte {
 	return payload
 }
 
-func makeQueryMessage(t testing.TB, name string, ip string) dnstap.Message {
+func makeQueryMessage(t testing.TB, name string, ip string) *dnstap.Message {
 	t.Helper()
-	return dnstap.Message{
+	return &dnstap.Message{
 		QueryAddress: net.ParseIP(ip).To4(),
 		QueryMessage: packQuery(t, name, dns.TypeA),
 	}
@@ -122,7 +122,7 @@ func TestOptimizeTree_ResultsUnchanged(t *testing.T) {
 
 	messages := []struct {
 		name string
-		msg  dnstap.Message
+		msg  *dnstap.Message
 	}{
 		{
 			"query matching ip and suffix",
@@ -138,7 +138,7 @@ func TestOptimizeTree_ResultsUnchanged(t *testing.T) {
 		},
 		{
 			"response message",
-			dnstap.Message{
+			&dnstap.Message{
 				Type:            &msgType,
 				ResponseAddress: net.ParseIP("1.1.1.1").To4(),
 				ResponseMessage: packQuery(t, "www.example.com.", dns.TypeA),
@@ -146,7 +146,7 @@ func TestOptimizeTree_ResultsUnchanged(t *testing.T) {
 		},
 		{
 			"nil query message",
-			dnstap.Message{
+			&dnstap.Message{
 				QueryAddress: net.ParseIP("1.1.1.1").To4(),
 				QueryMessage: nil,
 			},

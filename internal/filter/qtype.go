@@ -21,7 +21,7 @@ func NewQtypeFilter(typeName string) *QtypeFilter {
 	return &QtypeFilter{Qtype: t}
 }
 
-func (p *QtypeFilter) Filter(m dnstap.Message, ctx *EvalContext) bool {
+func (p *QtypeFilter) Filter(m *dnstap.Message, ctx *EvalContext) bool {
 	msg := ctx.UnpackQueryOrResponse(m)
 	if msg == nil {
 		return false
