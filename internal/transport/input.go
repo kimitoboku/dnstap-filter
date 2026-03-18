@@ -13,6 +13,7 @@ import (
 //   - file:<path>      - dnstap frame stream file
 //   - unix:<path>      - Unix domain socket server (listens for incoming connections)
 //   - tcp:<host:port>  - TCP server (listens for incoming connections)
+//   - pcap:<path>      - pcap file (DNS packets converted to dnstap)
 //
 // Bare paths without a scheme are treated as file: (backward compatibility).
 func ParseInput(spec string) (dnstap.Input, error) {
@@ -36,6 +37,8 @@ func ParseInput(spec string) (dnstap.Input, error) {
 			return nil, fmt.Errorf("tcp input: failed to listen on %s: %w", u.address, err)
 		}
 		return dnstap.NewFrameStreamSockInput(listener), nil
+	case schemePcap:
+		return NewPcapInput(u.address)
 	default:
 		return nil, fmt.Errorf("unsupported input scheme %q", u.scheme)
 	}
