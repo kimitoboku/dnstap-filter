@@ -138,6 +138,7 @@ func packetToDnstapFrame(packet gopacket.Packet) ([]byte, error) {
 		dtMsg.QueryAddress = srcIP
 		dtMsg.QueryPort = &srcPort
 		dtMsg.QueryMessage = payload
+		dtMsg.ResponseMessage = payload
 		dtMsg.QueryTimeSec = &sec
 		dtMsg.QueryTimeNsec = &nsec
 	} else {
@@ -145,7 +146,10 @@ func packetToDnstapFrame(packet gopacket.Packet) ([]byte, error) {
 		msgType := dnstap.Message_CLIENT_RESPONSE
 		dtMsg.Type = &msgType
 		dtMsg.QueryAddress = dstIP
-		dtMsg.ResponsePort = &dstPort
+		dtMsg.QueryPort = &dstPort
+		dtMsg.ResponseAddress = srcIP
+		dtMsg.ResponsePort = &srcPort
+		dtMsg.QueryMessage = payload
 		dtMsg.ResponseMessage = payload
 		dtMsg.ResponseTimeSec = &sec
 		dtMsg.ResponseTimeNsec = &nsec
