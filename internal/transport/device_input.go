@@ -9,41 +9,63 @@ import (
 	"github.com/gopacket/gopacket/pcap"
 )
 
-// DeviceInput captures live DNS packets from a network interface and emits
-// dnstap frames.
+// DeviceInput captures live DNS packets from one or more network interfaces
+// and emits dnstap frames.
 type DeviceInput struct {
-	device string
-	wg     sync.WaitGroup
+	devices []string
+	wg      sync.WaitGroup
 }
 
 // NewDeviceInput creates a DeviceInput that captures DNS packets from the
-// specified network interface.
+// specified network interface. Use "all" to capture from all available devices.
 func NewDeviceInput(device string) (*DeviceInput, error) {
-	devices, err := pcap.FindAllDevs()
+	allDevs, err := pcap.FindAllDevs()
 	if err != nil {
 		return nil, fmt.Errorf("failed to list devices: %w", err)
 	}
-	found := false
-	for _, d := range devices {
-		if d.Name == device {
-			found = true
-			break
+
+	var targets []string
+	if device == "all" {
+		for _, d := range allDevs {
+			targets = append(targets, d.Name)
 		}
+		if len(targets) == 0 {
+			return nil, fmt.Errorf("no capture devices found")
+		}
+	} else {
+		found := false
+		for _, d := range allDevs {
+			if d.Name == device {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return nil, fmt.Errorf("device %q not found", device)
+		}
+		targets = []string{device}
 	}
-	if !found {
-		return nil, fmt.Errorf("device %q not found", device)
-	}
-	p := &DeviceInput{device: device}
+
+	p := &DeviceInput{devices: targets}
 	p.wg.Add(1)
 	return p, nil
 }
 
-// ReadInto opens a live capture on the device and sends dnstap frames to the channel.
+// ReadInto opens a live capture on each device and sends dnstap frames to the channel.
 func (d *DeviceInput) ReadInto(ch chan []byte) {
 	defer d.wg.Done()
-	if err := d.capture(ch); err != nil {
-		fmt.Fprintf(os.Stderr, "device input: %s\n", err)
+
+	var capWg sync.WaitGroup
+	for _, dev := range d.devices {
+		capWg.Add(1)
+		go func(name string) {
+			defer capWg.Done()
+			if err := captureDevice(name, ch); err != nil {
+				fmt.Fprintf(os.Stderr, "device input %s: %s\n", name, err)
+			}
+		}(dev)
 	}
+	capWg.Wait()
 }
 
 // Wait blocks until the capture is complete.
@@ -51,10 +73,10 @@ func (d *DeviceInput) Wait() {
 	d.wg.Wait()
 }
 
-func (d *DeviceInput) capture(ch chan []byte) error {
-	handle, err := pcap.OpenLive(d.device, 65535, false, pcap.BlockForever)
+func captureDevice(device string, ch chan []byte) error {
+	handle, err := pcap.OpenLive(device, 65535, false, pcap.BlockForever)
 	if err != nil {
-		return fmt.Errorf("failed to open device %s: %w", d.device, err)
+		return fmt.Errorf("failed to open device %s: %w", device, err)
 	}
 	defer handle.Close()
 
