@@ -54,7 +54,8 @@ Specifies the destination for filtered dnstap data. The format is ~scheme:addres
 
 | Scheme | Example | Description |
 |--------|---------|-------------|
-| *(omitted)* | | Print ~<time> <name> <type>~ to stdout (default) |
+| *(omitted)* | | Print ~<time> <Q\vert{}R> <name> <type> [<rcode>]~ to stdout (default) |
+| ~stdout:<fields>~ | ~stdout:time,qr,name,type,rcode~ | Customizable stdout output (comma-separated fields) |
 | ~file:<path>~ | ~file:output.dnstap~ | Write dnstap frame stream file (supports SIGHUP log rotation) |
 | ~unix:<path>~ | ~unix:/var/run/collector.sock~ | Connect to a Unix domain socket (client mode) |
 | ~tcp:<host:port>~ | ~tcp:127.0.0.1:6001~ | Connect to a TCP collector (client mode) |
@@ -62,6 +63,34 @@ Specifies the destination for filtered dnstap data. The format is ~scheme:addres
 | ~yaml:-~ | ~yaml:-~ | Write human-readable YAML format to stdout |
 
 A bare path without a scheme (e.g. ~output.dnstap~) is treated as ~file:~ for backward compatibility.
+
+**** ~stdout:~ fields
+
+The ~stdout:~ scheme accepts a comma-separated list of field names to control which columns are printed.
+If no fields are specified (~stdout:~), the default set ~time,qr,name,type,rcode~ is used.
+
+| Field | Description | Example |
+|-------|-------------|---------|
+| ~time~ | Timestamp (query time preferred, then response time) | ~2024-01-01 12:00:00~ |
+| ~qr~ | Query/Response indicator | ~Q~ or ~R~ |
+| ~msgtype~ | Full dnstap message type name | ~CLIENT_QUERY~ |
+| ~name~ | DNS query name | ~www.example.com.~ |
+| ~type~ | DNS query type | ~A~, ~AAAA~, ~MX~ |
+| ~rcode~ | Response code (omitted for queries) | ~NOERROR~, ~NXDOMAIN~ |
+| ~ip~ | Client IP address (QueryAddress) | ~192.168.1.1~ |
+
+#+begin_src sh
+# Default fields
+dnstap-filter --in file:input.dnstap --out stdout:
+# Output: 2024-01-01 12:00:00 Q www.example.com. A
+# Output: 2024-01-01 12:00:01 R www.example.com. A NOERROR
+
+# Custom fields: show client IP and full message type
+dnstap-filter --in file:input.dnstap --out stdout:time,msgtype,ip,name,type,rcode
+
+# Minimal: name and type only
+dnstap-filter --in file:input.dnstap --out stdout:name,type
+#+end_src
 
 Note: ~unix:~ and ~tcp:~ outputs are clients that connect to a collector. If the collector is not
 available, they retry every 10 seconds.
@@ -72,7 +101,7 @@ Required:
 - ~--in~: input spec (required unless ~--print-filter-tree~ is used)
 
 Optional:
-- ~--out~: output spec (default: print query name, type and time to stdout)
+- ~--out~: output spec (default: print ~<time> <Q|R> <name> <type> [<rcode>]~ to stdout)
 - ~--filter~: filter expression
 - ~--print-filter-tree~: print the parsed filter tree and exit
 - ~--cout~, ~-c~: process only the first N records from the beginning of input
@@ -208,9 +237,10 @@ The ~not~ operator negates any predicate or grouped expression.
 ** Examples
 
 #+begin_src sh
-# Default output: print query name, type and time to stdout
+# Default output: print time, Q/R, name, type and rcode to stdout
 dnstap-filter --in file:input.dnstap --filter "ip=1.1.1.1"
-# Output: 2024-01-15 12:34:56 example.com. A
+# Output: 2024-01-15 12:34:56 Q example.com. A
+# Output: 2024-01-15 12:34:56 R example.com. A NOERROR
 
 # Filter file to file (backward-compatible bare paths)
 dnstap-filter --in input.dnstap --out output.dnstap --filter "ip=1.1.1.1"
