@@ -23,6 +23,8 @@ Specifies the source of dnstap data. The format is ~scheme:address~.
 | ~file:<path>~ | ~file:input.dnstap~ | Read from a dnstap frame stream file |
 | ~unix:<path>~ | ~unix:/var/run/named/dnstap.sock~ | Listen on a Unix domain socket (server mode) |
 | ~tcp:<host:port>~ | ~tcp:0.0.0.0:6000~ | Listen on a TCP port (server mode) |
+| ~pcap:<path>~ | ~pcal:input.pcap~ | Read DNS query from pcap file |
+
 
 A bare path without a scheme (e.g. ~input.dnstap~) is treated as ~file:~ for backward compatibility.
 
