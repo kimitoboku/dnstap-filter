@@ -73,6 +73,29 @@ func TestParseURI_YAML(t *testing.T) {
 	}
 }
 
+func TestParseURI_Stdout(t *testing.T) {
+	tests := []struct {
+		spec     string
+		wantAddr string
+	}{
+		{"stdout:", ""},
+		{"stdout:time,name,type", "time,name,type"},
+		{"stdout:time,qr,name,type,rcode,ip", "time,qr,name,type,rcode,ip"},
+	}
+	for _, tt := range tests {
+		u, err := parseURI(tt.spec)
+		if err != nil {
+			t.Fatalf("parseURI(%q) error: %v", tt.spec, err)
+		}
+		if u.scheme != schemeStdout {
+			t.Fatalf("parseURI(%q): expected scheme stdout, got %q", tt.spec, u.scheme)
+		}
+		if u.address != tt.wantAddr {
+			t.Fatalf("parseURI(%q): expected address %q, got %q", tt.spec, tt.wantAddr, u.address)
+		}
+	}
+}
+
 func TestParseURI_UnknownScheme(t *testing.T) {
 	_, err := parseURI("ftp:some.server")
 	if err == nil {

@@ -26,7 +26,11 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 	fs.SetOutput(os.Stderr)
 
 	in := fs.String("in", "", "input spec: file:<path> | unix:<path> | tcp:<host:port> | pcap:<path> | device:<iface>")
-	out := fs.String("out", "", "output spec: file:<path> | unix:<path> | tcp:<host:port> | yaml:<path>|yaml:-\n\t(default: print query name, type and time to stdout)")
+	out := fs.String("out", "", "output spec: file:<path> | unix:<path> | tcp:<host:port> | yaml:<path>|yaml:-\n"+
+		"\tstdout:<fields> - customizable stdout (comma-separated fields)\n"+
+		"\t  fields: time, qr, msgtype, name, type, rcode, ip\n"+
+		"\t  example: stdout:time,qr,name,type,rcode\n"+
+		"\t(default: print \"<time> <Q|R> <name> <type> [<rcode>]\" to stdout)")
 	filterExpr := fs.String("filter", "", "filter expression (omit to match all)\n"+
 		"\tPredicates:\n"+
 		"\t  ip=<addr>               DNS client IP exact match        ip=1.1.1.1\n"+
