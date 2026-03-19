@@ -8,6 +8,18 @@ A tool to filter records from dnstap sources and write matched records to variou
 go install github.com/kimitoboku/dnstap-filter/cmd/dnstap-filter@latest
 #+end_src
 
+*** Build dependency
+
+The ~device:~ input scheme uses ~libpcap~ via cgo. Install the development headers before building:
+
+#+begin_src sh
+# Debian / Ubuntu
+sudo apt-get install libpcap-dev
+
+# macOS (Homebrew)
+brew install libpcap
+#+end_src
+
 ** Usage
 
 #+begin_src sh
@@ -23,10 +35,15 @@ Specifies the source of dnstap data. The format is ~scheme:address~.
 | ~file:<path>~ | ~file:input.dnstap~ | Read from a dnstap frame stream file |
 | ~unix:<path>~ | ~unix:/var/run/named/dnstap.sock~ | Listen on a Unix domain socket (server mode) |
 | ~tcp:<host:port>~ | ~tcp:0.0.0.0:6000~ | Listen on a TCP port (server mode) |
-| ~pcap:<path>~ | ~pcal:input.pcap~ | Read DNS query from pcap file |
+| ~pcap:<path>~ | ~pcap:input.pcap~ | Read DNS packets from a pcap file |
+| ~device:<iface>~ | ~device:en0~ | Live capture from a network interface (requires root) |
+| ~device:all~ | ~device:all~ | Live capture from all available interfaces (requires root) |
 
 
 A bare path without a scheme (e.g. ~input.dnstap~) is treated as ~file:~ for backward compatibility.
+
+Note: ~device:~ input requires ~libpcap-dev~ (Debian/Ubuntu) or ~libpcap~ (macOS via Homebrew) to be installed at build time.
+Root privileges or appropriate capabilities are required at runtime for live packet capture.
 
 Note: ~unix:~ and ~tcp:~ inputs run as servers that accept connections from DNS servers (BIND, Unbound, etc.).
 The process runs until killed (Ctrl+C).
@@ -255,6 +272,15 @@ dnstap-filter --in file:input.dnstap --filter "subnet=10.0.0.0/8 and not rcode=N
 
 # Exclude a group of query types
 dnstap-filter --in file:input.dnstap --filter "not (qtype=A or qtype=AAAA)"
+
+# Live capture from a specific network interface
+sudo dnstap-filter --in device:en0 --filter "suffix=example.com."
+
+# Live capture from all interfaces
+sudo dnstap-filter --in device:all --filter "qtype=AAAA"
+
+# Live capture with YAML output
+sudo dnstap-filter --in device:en0 --out yaml:- --filter "rcode=NXDOMAIN"
 
 # Print filter tree only
 dnstap-filter --filter "ip=1.1.1.1 and (suffix=example.com. or rcode=NXDOMAIN)" --print-filter-tree
