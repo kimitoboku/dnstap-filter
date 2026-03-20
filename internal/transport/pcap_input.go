@@ -131,8 +131,8 @@ func packetToDnstapFrame(packet gopacket.Packet) ([]byte, error) {
 		SocketProtocol: &socketProto,
 	}
 
-	if !msg.Response {
-		// Query (QR=0) -> CLIENT_QUERY
+	if !msg.Response && msg.RecursionDesired {
+		// QR=0, RD=1 → CLIENT_QUERY (Client → Full Resolver)
 		msgType := dnstap.Message_CLIENT_QUERY
 		dtMsg.Type = &msgType
 		dtMsg.QueryAddress = srcIP
@@ -141,9 +141,31 @@ func packetToDnstapFrame(packet gopacket.Packet) ([]byte, error) {
 		dtMsg.ResponseMessage = payload
 		dtMsg.QueryTimeSec = &sec
 		dtMsg.QueryTimeNsec = &nsec
-	} else {
-		// Response (QR=1) -> CLIENT_RESPONSE
+	} else if !msg.Response && !msg.RecursionDesired {
+		// QR=0, RD=0 → RESOLVER_QUERY (Full Resolver → Auth Server)
+		msgType := dnstap.Message_RESOLVER_QUERY
+		dtMsg.Type = &msgType
+		dtMsg.QueryAddress = srcIP
+		dtMsg.QueryPort = &srcPort
+		dtMsg.QueryMessage = payload
+		dtMsg.ResponseMessage = payload
+		dtMsg.QueryTimeSec = &sec
+		dtMsg.QueryTimeNsec = &nsec
+	} else if msg.Response && msg.RecursionDesired {
+		// QR=1, RD=1 → CLIENT_RESPONSE (Full Resolver → Client)
 		msgType := dnstap.Message_CLIENT_RESPONSE
+		dtMsg.Type = &msgType
+		dtMsg.QueryAddress = dstIP
+		dtMsg.QueryPort = &dstPort
+		dtMsg.ResponseAddress = srcIP
+		dtMsg.ResponsePort = &srcPort
+		dtMsg.QueryMessage = payload
+		dtMsg.ResponseMessage = payload
+		dtMsg.ResponseTimeSec = &sec
+		dtMsg.ResponseTimeNsec = &nsec
+	} else {
+		// QR=1, RD=0 → RESOLVER_RESPONSE (Auth Server → Full Resolver)
+		msgType := dnstap.Message_RESOLVER_RESPONSE
 		dtMsg.Type = &msgType
 		dtMsg.QueryAddress = dstIP
 		dtMsg.QueryPort = &dstPort

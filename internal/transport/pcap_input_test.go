@@ -90,6 +90,7 @@ func TestPcapInput_QueryAndResponse(t *testing.T) {
 	query := dns.Msg{}
 	query.SetQuestion("example.com.", dns.TypeA)
 	query.Id = 1234
+	query.RecursionDesired = true
 
 	resp := dns.Msg{}
 	resp.SetReply(&query)
@@ -194,6 +195,92 @@ func TestPcapInput_QueryAndResponse(t *testing.T) {
 	}
 	if !parsedResp.Response {
 		t.Error("expected response flag to be set")
+	}
+}
+
+func TestPcapInput_ResolverQueryAndResponse(t *testing.T) {
+	dir := t.TempDir()
+	pcapPath := filepath.Join(dir, "test.pcap")
+
+	queryTime := time.Date(2024, 1, 15, 10, 30, 0, 123456000, time.UTC)
+	respTime := queryTime.Add(5 * time.Millisecond)
+
+	// RD=0: Full Resolver → Auth Server
+	query := dns.Msg{}
+	query.SetQuestion("example.com.", dns.TypeA)
+	query.Id = 5678
+	query.RecursionDesired = false
+
+	resp := dns.Msg{}
+	resp.SetReply(&query)
+	resp.RecursionDesired = false
+	resp.Answer = append(resp.Answer, &dns.A{
+		Hdr: dns.RR_Header{Name: "example.com.", Rrtype: dns.TypeA, Class: dns.ClassINET, Ttl: 300},
+		A:   net.ParseIP("93.184.216.34"),
+	})
+
+	writeDNSPcap(t, pcapPath, []dnsPacketSpec{
+		{
+			srcIP: net.ParseIP("10.0.0.1"), dstIP: net.ParseIP("198.51.100.1"),
+			srcPort: 40000, dstPort: 53,
+			ts: queryTime, msg: query,
+		},
+		{
+			srcIP: net.ParseIP("198.51.100.1"), dstIP: net.ParseIP("10.0.0.1"),
+			srcPort: 53, dstPort: 40000,
+			ts: respTime, msg: resp,
+		},
+	})
+
+	input, err := NewPcapInput(pcapPath)
+	if err != nil {
+		t.Fatalf("NewPcapInput: %v", err)
+	}
+
+	ch := make(chan []byte, 16)
+	go input.ReadInto(ch)
+	input.Wait()
+	close(ch)
+
+	var frames [][]byte
+	for frame := range ch {
+		frames = append(frames, frame)
+	}
+
+	if len(frames) != 2 {
+		t.Fatalf("expected 2 frames, got %d", len(frames))
+	}
+
+	// Verify RESOLVER_QUERY frame.
+	dt := &dnstap.Dnstap{}
+	if err := proto.Unmarshal(frames[0], dt); err != nil {
+		t.Fatalf("unmarshal frame 0: %v", err)
+	}
+	msg := dt.Message
+	if *msg.Type != dnstap.Message_RESOLVER_QUERY {
+		t.Errorf("expected RESOLVER_QUERY, got %v", *msg.Type)
+	}
+	if !net.IP(msg.QueryAddress).Equal(net.ParseIP("10.0.0.1")) {
+		t.Errorf("query address = %v, want 10.0.0.1", net.IP(msg.QueryAddress))
+	}
+	if *msg.QueryPort != 40000 {
+		t.Errorf("query port = %d, want 40000", *msg.QueryPort)
+	}
+
+	// Verify RESOLVER_RESPONSE frame.
+	dt2 := &dnstap.Dnstap{}
+	if err := proto.Unmarshal(frames[1], dt2); err != nil {
+		t.Fatalf("unmarshal frame 1: %v", err)
+	}
+	msg2 := dt2.Message
+	if *msg2.Type != dnstap.Message_RESOLVER_RESPONSE {
+		t.Errorf("expected RESOLVER_RESPONSE, got %v", *msg2.Type)
+	}
+	if !net.IP(msg2.QueryAddress).Equal(net.ParseIP("10.0.0.1")) {
+		t.Errorf("response query address = %v, want 10.0.0.1", net.IP(msg2.QueryAddress))
+	}
+	if !net.IP(msg2.ResponseAddress).Equal(net.ParseIP("198.51.100.1")) {
+		t.Errorf("response address = %v, want 198.51.100.1", net.IP(msg2.ResponseAddress))
 	}
 }
 
