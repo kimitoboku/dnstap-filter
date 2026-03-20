@@ -16,4 +16,5 @@
 /dnstap-filter
 
 data/
+coverage/
 .claude/
