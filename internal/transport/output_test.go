@@ -237,3 +237,78 @@ func TestDefaultQueryFormat_NilMessage(t *testing.T) {
 		t.Error("expected false for nil message")
 	}
 }
+
+func TestParseOutput_Default(t *testing.T) {
+	out, err := ParseOutput("")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out == nil {
+		t.Fatal("expected non-nil output")
+	}
+}
+
+func TestParseOutput_Stdout(t *testing.T) {
+	out, err := ParseOutput("stdout:time,name,type")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out == nil {
+		t.Fatal("expected non-nil output")
+	}
+}
+
+func TestParseOutput_StdoutDefault(t *testing.T) {
+	out, err := ParseOutput("stdout:")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out == nil {
+		t.Fatal("expected non-nil output")
+	}
+}
+
+func TestParseOutput_StdoutInvalidField(t *testing.T) {
+	_, err := ParseOutput("stdout:bogus")
+	if err == nil {
+		t.Fatal("expected error for invalid stdout field")
+	}
+}
+
+func TestParseOutput_InvalidScheme(t *testing.T) {
+	_, err := ParseOutput("ftp:something")
+	if err == nil {
+		t.Fatal("expected error for unknown scheme")
+	}
+}
+
+func TestNewStdoutFormatFunc_ResponseTime(t *testing.T) {
+	fn := newStdoutFormatFunc([]stdoutField{fieldTime, fieldName})
+	// Build a response that only has ResponseTimeSec (no QueryTimeSec)
+	dtType := dnstap.Dnstap_MESSAGE
+	msgType := dnstap.Message_CLIENT_RESPONSE
+	sec := uint64(1704067200)
+
+	msg := &dns.Msg{}
+	msg.SetQuestion("resp.example.com.", dns.TypeA)
+	msg.Response = true
+	packed, _ := msg.Pack()
+
+	dt := &dnstap.Dnstap{
+		Type: &dtType,
+		Message: &dnstap.Message{
+			Type:            &msgType,
+			ResponseTimeSec: &sec,
+			ResponseMessage: packed,
+		},
+	}
+
+	out, ok := fn(dt)
+	if !ok {
+		t.Fatal("format func returned false")
+	}
+	line := string(out)
+	if !strings.Contains(line, "2024") {
+		t.Errorf("expected timestamp from ResponseTimeSec, got: %s", line)
+	}
+}
