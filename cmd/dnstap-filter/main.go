@@ -33,8 +33,15 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 		"\t(default: print \"<time> <Q|R> <name> <type> [<rcode>]\" to stdout)")
 	filterExpr := fs.String("filter", "", "filter expression (omit to match all)\n"+
 		"\tPredicates:\n"+
-		"\t  ip=<addr>               DNS client IP exact match        ip=1.1.1.1\n"+
-		"\t  subnet=<CIDR>          DNS client IP subnet match       subnet=192.168.0.0/24\n"+
+		"\t  ip=<addr>               IP match (src or dst)            ip=1.1.1.1\n"+
+		"\t  src.ip=<addr>           query source IP only             src.ip=1.1.1.1\n"+
+		"\t  dst.ip=<addr>           response dest IP only            dst.ip=10.0.0.1\n"+
+		"\t  subnet=<CIDR>          subnet match (src or dst)        subnet=192.168.0.0/24\n"+
+		"\t  src.subnet=<CIDR>      query source subnet only         src.subnet=10.0.0.0/8\n"+
+		"\t  dst.subnet=<CIDR>      response dest subnet only        dst.subnet=172.16.0.0/12\n"+
+		"\t  port=<number>          port match (src or dst)          port=53\n"+
+		"\t  src.port=<number>      query source port only           src.port=12345\n"+
+		"\t  dst.port=<number>      response dest port only          dst.port=53\n"+
 		"\t  fqdn=<name>            query name exact match (FQDN)    fqdn=www.example.com.\n"+
 		"\t  suffix=<suffix>        query name suffix match          suffix=example.com.\n"+
 		"\t  qtype=<type>           DNS query type                   qtype=AAAA\n"+
@@ -47,8 +54,8 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 		"\t  msgtype=<type>         dnstap message type              msgtype=CLIENT_QUERY\n"+
 		"\t    types: CLIENT_QUERY CLIENT_RESPONSE RESOLVER_QUERY RESOLVER_RESPONSE\n"+
 		"\t           AUTH_QUERY AUTH_RESPONSE FORWARDER_QUERY FORWARDER_RESPONSE\n"+
-		"\tLogical operators: and  or  (...)\n"+
-		"\tExample: 'subnet=192.168.0.0/24 and (qtype=AAAA or rcode=NXDOMAIN)'")
+		"\tLogical operators: and  or  not  (...)\n"+
+		"\tExample: 'src.subnet=192.168.0.0/24 and (qtype=AAAA or rcode=NXDOMAIN)'")
 	printFilterTree := fs.Bool("print-filter-tree", false, "print parsed filter expression tree and exit")
 	countLimit := 0
 	fs.IntVar(&countLimit, "cout", 0, "process only the first N records from input")
