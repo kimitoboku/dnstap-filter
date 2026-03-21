@@ -23,7 +23,7 @@ brew install libpcap
 ** Usage
 
 #+begin_src sh
-dnstap-filter --in <input-spec> [--out <output-spec>] [--filter <expression>]
+dnstap-filter --in <input-spec> [--out <output-spec>]... [--filter <expression>]
 #+end_src
 
 *** Input (~--in~)
@@ -64,6 +64,13 @@ Specifies the destination for filtered dnstap data. The format is ~scheme:addres
 
 A bare path without a scheme (e.g. ~output.dnstap~) is treated as ~file:~ for backward compatibility.
 
+~--out~ can be specified multiple times to fan-out filtered data to multiple destinations simultaneously.
+For example, you can monitor on stdout while also saving to a file:
+
+#+begin_src sh
+dnstap-filter --in file:input.dnstap --out stdout:time,name,type --out file:output.dnstap --filter "suffix=example.com."
+#+end_src
+
 **** ~stdout:~ fields
 
 The ~stdout:~ scheme accepts a comma-separated list of field names to control which columns are printed.
@@ -101,7 +108,7 @@ Required:
 - ~--in~: input spec (required unless ~--print-filter-tree~ is used)
 
 Optional:
-- ~--out~: output spec (default: print ~<time> <Q|R> <name> <type> [<rcode>]~ to stdout)
+- ~--out~: output spec (repeatable; default: print ~<time> <Q|R> <name> <type> [<rcode>]~ to stdout)
 - ~--filter~: filter expression
 - ~--print-filter-tree~: print the parsed filter tree and exit
 - ~--cout~, ~-c~: process only the first N records from the beginning of input
@@ -347,6 +354,15 @@ sudo dnstap-filter --in device:all --filter "qtype=AAAA"
 
 # Live capture with YAML output
 sudo dnstap-filter --in device:en0 --out yaml:- --filter "rcode=NXDOMAIN"
+
+# Fan-out: monitor on stdout while saving to file
+dnstap-filter --in file:input.dnstap --out stdout:time,name,type --out file:output.dnstap --filter "suffix=example.com."
+
+# Fan-out: stdout and YAML to a file simultaneously
+dnstap-filter --in unix:/var/run/named/dnstap.sock --out stdout:time,qr,name --out yaml:/tmp/debug.yaml --filter "rcode=NXDOMAIN"
+
+# Fan-out: write to multiple dnstap files
+dnstap-filter --in file:input.dnstap --out file:copy1.dnstap --out file:copy2.dnstap
 
 # Print filter tree only
 dnstap-filter --filter "ip=1.1.1.1 and (suffix=example.com. or rcode=NXDOMAIN)" --print-filter-tree

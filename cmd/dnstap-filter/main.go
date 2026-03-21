@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/dnstap/golang-dnstap"
 	"google.golang.org/protobuf/proto"
@@ -13,9 +14,18 @@ import (
 	"github.com/kimitoboku/dnstap-filter/internal/transport"
 )
 
+// stringSlice implements flag.Value so that --out can be specified multiple times.
+type stringSlice []string
+
+func (s *stringSlice) String() string { return strings.Join(*s, ",") }
+func (s *stringSlice) Set(val string) error {
+	*s = append(*s, val)
+	return nil
+}
+
 type cliConfig struct {
 	inputSpec       string
-	outputSpec      string
+	outputSpecs     []string
 	filterExpr      string
 	printFilterTree bool
 	countLimit      int
@@ -26,10 +36,12 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 	fs.SetOutput(os.Stderr)
 
 	in := fs.String("in", "", "input spec: file:<path> | unix:<path> | tcp:<host:port> | pcap:<path> | device:<iface>")
-	out := fs.String("out", "", "output spec: file:<path> | unix:<path> | tcp:<host:port> | yaml:<path>|yaml:-\n"+
+	var outSpecs stringSlice
+	fs.Var(&outSpecs, "out", "output spec (repeatable): file:<path> | unix:<path> | tcp:<host:port> | yaml:<path>|yaml:-\n"+
 		"\tstdout:<fields> - customizable stdout (comma-separated fields)\n"+
 		"\t  fields: time, qr, msgtype, name, type, rcode, ip\n"+
 		"\t  example: stdout:time,qr,name,type,rcode\n"+
+		"\t(can be specified multiple times for fan-out to multiple destinations)\n"+
 		"\t(default: print \"<time> <Q|R> <name> <type> [<rcode>]\" to stdout)")
 	filterExpr := fs.String("filter", "", "filter expression (omit to match all)\n"+
 		"\tPredicates:\n"+
@@ -79,7 +91,7 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 
 	return cliConfig{
 		inputSpec:       *in,
-		outputSpec:      *out,
+		outputSpecs:     []string(outSpecs),
 		filterExpr:      *filterExpr,
 		printFilterTree: *printFilterTree,
 		countLimit:      countLimit,
@@ -137,7 +149,7 @@ func run(args []string) error {
 		return fmt.Errorf("input: %w", err)
 	}
 
-	o, err := transport.ParseOutput(cfg.outputSpec)
+	o, err := transport.ParseOutputs(cfg.outputSpecs)
 	if err != nil {
 		return fmt.Errorf("output: %w", err)
 	}

@@ -11,8 +11,8 @@ func TestParseCLIArgs_Success(t *testing.T) {
 	if cfg.inputSpec != "in.dnstap" {
 		t.Fatalf("unexpected input spec: %s", cfg.inputSpec)
 	}
-	if cfg.outputSpec != "out.dnstap" {
-		t.Fatalf("unexpected output spec: %s", cfg.outputSpec)
+	if len(cfg.outputSpecs) != 1 || cfg.outputSpecs[0] != "out.dnstap" {
+		t.Fatalf("unexpected output specs: %v", cfg.outputSpecs)
 	}
 	if cfg.filterExpr != "ip=1.1.1.1" {
 		t.Fatalf("unexpected filter expr: %s", cfg.filterExpr)
@@ -84,8 +84,8 @@ func TestParseCLIArgs_OutOptional(t *testing.T) {
 	if err != nil {
 		t.Fatalf("unexpected error when --out is omitted: %v", err)
 	}
-	if cfg.outputSpec != "" {
-		t.Fatalf("expected empty outputSpec when --out is omitted, got: %s", cfg.outputSpec)
+	if len(cfg.outputSpecs) != 0 {
+		t.Fatalf("expected empty outputSpecs when --out is omitted, got: %v", cfg.outputSpecs)
 	}
 }
 
@@ -118,9 +118,30 @@ func TestParseCLIArgs_URISchemes(t *testing.T) {
 			if cfg.inputSpec != tt.in {
 				t.Fatalf("expected inputSpec %q, got %q", tt.in, cfg.inputSpec)
 			}
-			if cfg.outputSpec != tt.out {
-				t.Fatalf("expected outputSpec %q, got %q", tt.out, cfg.outputSpec)
+			if len(cfg.outputSpecs) != 1 || cfg.outputSpecs[0] != tt.out {
+				t.Fatalf("expected outputSpecs [%q], got %v", tt.out, cfg.outputSpecs)
 			}
 		})
+	}
+}
+
+func TestParseCLIArgs_MultipleOuts(t *testing.T) {
+	cfg, err := parseCLIArgs([]string{
+		"--in", "in.dnstap",
+		"--out", "file:a.dnstap",
+		"--out", "yaml:-",
+		"--out", "stdout:time,name",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if len(cfg.outputSpecs) != 3 {
+		t.Fatalf("expected 3 output specs, got %d: %v", len(cfg.outputSpecs), cfg.outputSpecs)
+	}
+	expected := []string{"file:a.dnstap", "yaml:-", "stdout:time,name"}
+	for i, want := range expected {
+		if cfg.outputSpecs[i] != want {
+			t.Fatalf("outputSpecs[%d]: expected %q, got %q", i, want, cfg.outputSpecs[i])
+		}
 	}
 }
