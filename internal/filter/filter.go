@@ -172,7 +172,7 @@ func nodeCost(n Node) int {
 	switch n := n.(type) {
 	case *PredicateNode:
 		switch n.Key {
-		case "ip", "src.ip", "dst.ip", "subnet", "src.subnet", "dst.subnet", "port", "src.port", "dst.port", "msgtype":
+		case "ip", "src.ip", "dst.ip", "subnet", "src.subnet", "dst.subnet", "port", "src.port", "dst.port", "msgtype", "time.after", "time.before":
 			return 1
 		default:
 			return 10

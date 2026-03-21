@@ -256,6 +256,13 @@ func parsePredicate(tok token) (filter.Node, error) {
 			return nil, fmt.Errorf("token %d at char %d ('%s'): invalid regexp: %w", tok.index, tok.pos, tok.lit, err)
 		}
 		return &filter.PredicateNode{Filter: f, Key: key, Value: value}, nil
+	case "time.after", "time.before":
+		after := key == "time.after"
+		f, err := filter.NewTimeFilter(value, after)
+		if err != nil {
+			return nil, fmt.Errorf("token %d at char %d ('%s'): invalid time value: %w", tok.index, tok.pos, tok.lit, err)
+		}
+		return &filter.PredicateNode{Filter: f, Key: key, Value: value}, nil
 	default:
 		return nil, fmt.Errorf("token %d at char %d ('%s'): unknown predicate key '%s'", tok.index, tok.pos, tok.lit, key)
 	}

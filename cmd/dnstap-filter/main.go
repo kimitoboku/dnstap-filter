@@ -54,6 +54,9 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 		"\t  msgtype=<type>         dnstap message type              msgtype=CLIENT_QUERY\n"+
 		"\t    types: CLIENT_QUERY CLIENT_RESPONSE RESOLVER_QUERY RESOLVER_RESPONSE\n"+
 		"\t           AUTH_QUERY AUTH_RESPONSE FORWARDER_QUERY FORWARDER_RESPONSE\n"+
+		"\t  time.after=<time>      messages at or after time        time.after=2024-01-01T00:00:00Z\n"+
+		"\t  time.before=<time>     messages before time             time.before=2024-01-02T00:00:00Z\n"+
+		"\t    time formats: RFC3339 (2024-01-01T00:00:00Z) or Unix epoch seconds (1704067200)\n"+
 		"\tLogical operators: and  or  not  (...)\n"+
 		"\tExample: 'src.subnet=192.168.0.0/24 and (qtype=AAAA or rcode=NXDOMAIN)'")
 	printFilterTree := fs.Bool("print-filter-tree", false, "print parsed filter expression tree and exit")
