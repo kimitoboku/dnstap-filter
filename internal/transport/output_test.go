@@ -282,6 +282,93 @@ func TestParseOutput_InvalidScheme(t *testing.T) {
 	}
 }
 
+func TestParseOutputs_Empty(t *testing.T) {
+	out, err := ParseOutputs(nil)
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out == nil {
+		t.Fatal("expected non-nil output for empty specs")
+	}
+}
+
+func TestParseOutputs_Single(t *testing.T) {
+	out, err := ParseOutputs([]string{"stdout:time,name"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out == nil {
+		t.Fatal("expected non-nil output")
+	}
+	if _, ok := out.(*MultiOutput); ok {
+		t.Fatal("single spec should not return MultiOutput")
+	}
+}
+
+func TestParseOutputs_Multiple(t *testing.T) {
+	out, err := ParseOutputs([]string{"stdout:time,name", "stdout:name,type"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	mo, ok := out.(*MultiOutput)
+	if !ok {
+		t.Fatal("multiple specs should return MultiOutput")
+	}
+	if len(mo.outputs) != 2 {
+		t.Fatalf("expected 2 outputs, got %d", len(mo.outputs))
+	}
+}
+
+func TestParseOutputs_InvalidSpec(t *testing.T) {
+	_, err := ParseOutputs([]string{"stdout:bogus", "stdout:time"})
+	if err == nil {
+		t.Fatal("expected error for invalid spec in list")
+	}
+}
+
+func TestMultiOutput_FanOut(t *testing.T) {
+	// Create two stdout outputs and verify frames reach both channels
+	o1, err := ParseOutput("stdout:time,name")
+	if err != nil {
+		t.Fatal(err)
+	}
+	o2, err := ParseOutput("stdout:name,type")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mo := NewMultiOutput([]dnstap.Output{o1, o2})
+	ch := mo.GetOutputChannel()
+
+	// Start only the fan-out loop (not the child RunOutputLoops, to avoid stdout writes)
+	done := make(chan struct{})
+	go func() {
+		defer close(done)
+		for frame := range mo.ch {
+			for _, o := range mo.outputs {
+				o.GetOutputChannel() <- frame
+			}
+		}
+	}()
+
+	frame := []byte("test-frame")
+	ch <- frame
+
+	// Read from both child channels
+	got1 := <-o1.GetOutputChannel()
+	got2 := <-o2.GetOutputChannel()
+
+	if string(got1) != "test-frame" {
+		t.Errorf("output1: expected 'test-frame', got %q", got1)
+	}
+	if string(got2) != "test-frame" {
+		t.Errorf("output2: expected 'test-frame', got %q", got2)
+	}
+
+	close(ch)
+	<-done
+}
+
 func TestNewStdoutFormatFunc_ResponseTime(t *testing.T) {
 	fn := newStdoutFormatFunc([]stdoutField{fieldTime, fieldName})
 	// Build a response that only has ResponseTimeSec (no QueryTimeSec)

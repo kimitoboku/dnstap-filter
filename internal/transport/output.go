@@ -209,6 +209,68 @@ func newStdoutFormatFunc(fields []stdoutField) dnstap.TextFormatFunc {
 // It renders each dnstap message as: "<time> <Q|R> <name> <type> [<rcode>]"
 var defaultQueryFormat = newStdoutFormatFunc(defaultFields)
 
+// MultiOutput fans out dnstap frames to multiple outputs.
+type MultiOutput struct {
+	outputs []dnstap.Output
+	ch      chan []byte
+	done    chan struct{}
+}
+
+// NewMultiOutput creates a MultiOutput that distributes frames to all given outputs.
+func NewMultiOutput(outputs []dnstap.Output) *MultiOutput {
+	return &MultiOutput{
+		outputs: outputs,
+		ch:      make(chan []byte, 32),
+		done:    make(chan struct{}),
+	}
+}
+
+func (m *MultiOutput) GetOutputChannel() chan []byte {
+	return m.ch
+}
+
+func (m *MultiOutput) RunOutputLoop() {
+	defer close(m.done)
+	for _, o := range m.outputs {
+		go o.RunOutputLoop()
+	}
+	for frame := range m.ch {
+		for _, o := range m.outputs {
+			o.GetOutputChannel() <- frame
+		}
+	}
+}
+
+func (m *MultiOutput) Close() {
+	close(m.ch)
+	<-m.done
+	for _, o := range m.outputs {
+		o.Close()
+	}
+}
+
+// ParseOutputs parses multiple output specs and returns a single dnstap.Output.
+// If no specs are given, the default stdout output is returned.
+// If one spec is given, a single output is returned (no fan-out overhead).
+// If multiple specs are given, a MultiOutput fan-out wrapper is returned.
+func ParseOutputs(specs []string) (dnstap.Output, error) {
+	if len(specs) == 0 {
+		return ParseOutput("")
+	}
+	if len(specs) == 1 {
+		return ParseOutput(specs[0])
+	}
+	outputs := make([]dnstap.Output, 0, len(specs))
+	for _, spec := range specs {
+		o, err := ParseOutput(spec)
+		if err != nil {
+			return nil, err
+		}
+		outputs = append(outputs, o)
+	}
+	return NewMultiOutput(outputs), nil
+}
+
 // ParseOutput parses a transport spec and returns a dnstap.Output.
 //
 // Supported schemes:
