@@ -140,7 +140,7 @@ func TestParseFilterExpression_SuffixOrDoesNotMatchInvalidDNSPayload(t *testing.
 	}
 }
 
-func TestIPFilter_QueryAddressOnly(t *testing.T) {
+func TestIPFilter_MatchesBothAddresses(t *testing.T) {
 	node, err := ParseFilterExpression("ip=1.1.1.1")
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
@@ -150,9 +150,39 @@ func TestIPFilter_QueryAddressOnly(t *testing.T) {
 		t.Fatalf("expected ip filter to match QueryAddress")
 	}
 
-	// ResponseAddress only must NOT match (breaking change)
-	if node.Eval(newResponseMessage(t, "www.example.com.", "1.1.1.1", dns.RcodeSuccess), filter.NewEvalContext()) {
-		t.Fatalf("ip filter must not match ResponseAddress")
+	// ip= now matches both QueryAddress and ResponseAddress
+	if !node.Eval(newResponseMessage(t, "www.example.com.", "1.1.1.1", dns.RcodeSuccess), filter.NewEvalContext()) {
+		t.Fatalf("expected ip filter to match ResponseAddress")
+	}
+}
+
+func TestIPFilter_SrcDst(t *testing.T) {
+	srcNode, err := ParseFilterExpression("src.ip=1.1.1.1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	dstNode, err := ParseFilterExpression("dst.ip=1.1.1.1")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	queryMsg := newQueryMessage(t, "www.example.com.", "1.1.1.1")
+	responseMsg := newResponseMessage(t, "www.example.com.", "1.1.1.1", dns.RcodeSuccess)
+
+	// src.ip matches QueryAddress only
+	if !srcNode.Eval(queryMsg, filter.NewEvalContext()) {
+		t.Fatalf("expected src.ip to match QueryAddress")
+	}
+	if srcNode.Eval(responseMsg, filter.NewEvalContext()) {
+		t.Fatalf("expected src.ip to NOT match ResponseAddress-only message")
+	}
+
+	// dst.ip matches ResponseAddress only
+	if dstNode.Eval(queryMsg, filter.NewEvalContext()) {
+		t.Fatalf("expected dst.ip to NOT match QueryAddress-only message")
+	}
+	if !dstNode.Eval(responseMsg, filter.NewEvalContext()) {
+		t.Fatalf("expected dst.ip to match ResponseAddress")
 	}
 }
 
@@ -169,12 +199,132 @@ func TestSubnetFilter_Match(t *testing.T) {
 	if node.Eval(newQueryMessage(t, "www.example.com.", "192.168.2.1"), filter.NewEvalContext()) {
 		t.Fatalf("expected subnet filter to not match IP outside range")
 	}
+
+	// subnet= now matches ResponseAddress too
+	responseMsg := newResponseMessage(t, "www.example.com.", "192.168.1.42", dns.RcodeSuccess)
+	if !node.Eval(responseMsg, filter.NewEvalContext()) {
+		t.Fatalf("expected subnet filter to match ResponseAddress inside range")
+	}
+}
+
+func TestSubnetFilter_SrcDst(t *testing.T) {
+	srcNode, err := ParseFilterExpression("src.subnet=10.0.0.0/8")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	dstNode, err := ParseFilterExpression("dst.subnet=10.0.0.0/8")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	queryMsg := newQueryMessage(t, "www.example.com.", "10.1.2.3")
+	responseMsg := newResponseMessage(t, "www.example.com.", "10.1.2.3", dns.RcodeSuccess)
+
+	if !srcNode.Eval(queryMsg, filter.NewEvalContext()) {
+		t.Fatalf("expected src.subnet to match QueryAddress")
+	}
+	if srcNode.Eval(responseMsg, filter.NewEvalContext()) {
+		t.Fatalf("expected src.subnet to NOT match ResponseAddress-only message")
+	}
+
+	if dstNode.Eval(queryMsg, filter.NewEvalContext()) {
+		t.Fatalf("expected dst.subnet to NOT match QueryAddress-only message")
+	}
+	if !dstNode.Eval(responseMsg, filter.NewEvalContext()) {
+		t.Fatalf("expected dst.subnet to match ResponseAddress")
+	}
 }
 
 func TestSubnetFilter_InvalidCIDR(t *testing.T) {
 	_, err := ParseFilterExpression("subnet=not-a-cidr")
 	if err == nil {
 		t.Fatalf("expected error for invalid CIDR")
+	}
+}
+
+func TestPortFilter_Match(t *testing.T) {
+	node, err := ParseFilterExpression("port=53")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	qport := uint32(12345)
+	rport := uint32(53)
+	msg := &dnstap.Message{
+		QueryAddress: net.ParseIP("1.1.1.1").To4(),
+		QueryPort:    &qport,
+		ResponsePort: &rport,
+		QueryMessage: packTestQuery(t, "www.example.com.", dns.TypeA),
+	}
+	if !node.Eval(msg, filter.NewEvalContext()) {
+		t.Fatalf("expected port=53 to match ResponsePort")
+	}
+
+	qport2 := uint32(53)
+	msg2 := &dnstap.Message{
+		QueryAddress: net.ParseIP("1.1.1.1").To4(),
+		QueryPort:    &qport2,
+		QueryMessage: packTestQuery(t, "www.example.com.", dns.TypeA),
+	}
+	if !node.Eval(msg2, filter.NewEvalContext()) {
+		t.Fatalf("expected port=53 to match QueryPort")
+	}
+
+	qport3 := uint32(12345)
+	rport3 := uint32(8080)
+	msg3 := &dnstap.Message{
+		QueryAddress: net.ParseIP("1.1.1.1").To4(),
+		QueryPort:    &qport3,
+		ResponsePort: &rport3,
+		QueryMessage: packTestQuery(t, "www.example.com.", dns.TypeA),
+	}
+	if node.Eval(msg3, filter.NewEvalContext()) {
+		t.Fatalf("expected port=53 to NOT match when neither port is 53")
+	}
+}
+
+func TestPortFilter_SrcDst(t *testing.T) {
+	srcNode, err := ParseFilterExpression("src.port=12345")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	dstNode, err := ParseFilterExpression("dst.port=53")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	qport := uint32(12345)
+	rport := uint32(53)
+	msg := &dnstap.Message{
+		QueryAddress: net.ParseIP("1.1.1.1").To4(),
+		QueryPort:    &qport,
+		ResponsePort: &rport,
+		QueryMessage: packTestQuery(t, "www.example.com.", dns.TypeA),
+	}
+
+	if !srcNode.Eval(msg, filter.NewEvalContext()) {
+		t.Fatalf("expected src.port=12345 to match QueryPort")
+	}
+	if !dstNode.Eval(msg, filter.NewEvalContext()) {
+		t.Fatalf("expected dst.port=53 to match ResponsePort")
+	}
+
+	// src.port should NOT match ResponsePort
+	srcNode2, _ := ParseFilterExpression("src.port=53")
+	if srcNode2.Eval(msg, filter.NewEvalContext()) {
+		t.Fatalf("expected src.port=53 to NOT match when QueryPort is 12345")
+	}
+}
+
+func TestPortFilter_Invalid(t *testing.T) {
+	_, err := ParseFilterExpression("port=notanumber")
+	if err == nil {
+		t.Fatalf("expected error for invalid port")
+	}
+
+	_, err = ParseFilterExpression("port=99999")
+	if err == nil {
+		t.Fatalf("expected error for port out of range")
 	}
 }
 
@@ -509,6 +659,17 @@ func newQueryMessage(t *testing.T, name string, ip string) *dnstap.Message {
 		QueryAddress: net.ParseIP(ip).To4(),
 		QueryMessage: payload,
 	}
+}
+
+func packTestQuery(t *testing.T, name string, qtype uint16) []byte {
+	t.Helper()
+	msg := new(dns.Msg)
+	msg.SetQuestion(name, qtype)
+	payload, err := msg.Pack()
+	if err != nil {
+		t.Fatalf("failed to pack: %v", err)
+	}
+	return payload
 }
 
 func newResponseMessage(t *testing.T, name string, ip string, rcode int) *dnstap.Message {

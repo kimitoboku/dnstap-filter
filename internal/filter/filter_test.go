@@ -162,14 +162,14 @@ func TestOptimizeTree_ResultsUnchanged(t *testing.T) {
 			"suffix AND ip",
 			&AndNode{
 				Left:  &PredicateNode{Filter: NewSuffixFilter("example.com."), Key: "suffix", Value: "example.com."},
-				Right: &PredicateNode{Filter: NewIPFilter("1.1.1.1"), Key: "ip", Value: "1.1.1.1"},
+				Right: &PredicateNode{Filter: NewIPFilter("1.1.1.1", AddrBoth), Key: "ip", Value: "1.1.1.1"},
 			},
 		},
 		{
 			"fqdn OR ip",
 			&OrNode{
 				Left:  &PredicateNode{Filter: NewFQDNFilter("www.example.com."), Key: "fqdn", Value: "www.example.com."},
-				Right: &PredicateNode{Filter: NewIPFilter("9.9.9.9"), Key: "ip", Value: "9.9.9.9"},
+				Right: &PredicateNode{Filter: NewIPFilter("9.9.9.9", AddrBoth), Key: "ip", Value: "9.9.9.9"},
 			},
 		},
 		{
@@ -179,14 +179,14 @@ func TestOptimizeTree_ResultsUnchanged(t *testing.T) {
 					Left:  &PredicateNode{Filter: NewSuffixFilter("example.com."), Key: "suffix", Value: "example.com."},
 					Right: &PredicateNode{Filter: NewQtypeFilter("A"), Key: "qtype", Value: "A"},
 				},
-				Right: &PredicateNode{Filter: NewIPFilter("9.9.9.9"), Key: "ip", Value: "9.9.9.9"},
+				Right: &PredicateNode{Filter: NewIPFilter("9.9.9.9", AddrBoth), Key: "ip", Value: "9.9.9.9"},
 			},
 		},
 		{
 			"NOT suffix AND ip",
 			&AndNode{
 				Left:  &NotNode{Child: &PredicateNode{Filter: NewSuffixFilter("example.org."), Key: "suffix", Value: "example.org."}},
-				Right: &PredicateNode{Filter: NewIPFilter("1.1.1.1"), Key: "ip", Value: "1.1.1.1"},
+				Right: &PredicateNode{Filter: NewIPFilter("1.1.1.1", AddrBoth), Key: "ip", Value: "1.1.1.1"},
 			},
 		},
 		{
@@ -195,7 +195,7 @@ func TestOptimizeTree_ResultsUnchanged(t *testing.T) {
 				Left: &PredicateNode{Filter: NewSuffixFilter("example.com."), Key: "suffix", Value: "example.com."},
 				Right: &AndNode{
 					Left:  &PredicateNode{Filter: NewQtypeFilter("A"), Key: "qtype", Value: "A"},
-					Right: &PredicateNode{Filter: NewIPFilter("1.1.1.1"), Key: "ip", Value: "1.1.1.1"},
+					Right: &PredicateNode{Filter: NewIPFilter("1.1.1.1", AddrBoth), Key: "ip", Value: "1.1.1.1"},
 				},
 			},
 		},
@@ -299,10 +299,62 @@ func makeResponseMessage(t testing.TB, name string, ip string, rcode int, answer
 	}
 }
 
+// --- IPFilter AddrMode tests ---
+
+func TestIPFilter_AddrBoth(t *testing.T) {
+	f := NewIPFilter("1.1.1.1", AddrBoth)
+	ctx := NewEvalContext()
+
+	// Match QueryAddress
+	msg := makeQueryMessage(t, "example.com.", "1.1.1.1")
+	if !f.Filter(msg, ctx) {
+		t.Fatal("expected AddrBoth to match QueryAddress")
+	}
+
+	// Match ResponseAddress
+	ctx.Reset()
+	msg2 := &dnstap.Message{ResponseAddress: net.ParseIP("1.1.1.1").To4()}
+	if !f.Filter(msg2, ctx) {
+		t.Fatal("expected AddrBoth to match ResponseAddress")
+	}
+}
+
+func TestIPFilter_AddrSrc(t *testing.T) {
+	f := NewIPFilter("1.1.1.1", AddrSrc)
+	ctx := NewEvalContext()
+
+	msg := makeQueryMessage(t, "example.com.", "1.1.1.1")
+	if !f.Filter(msg, ctx) {
+		t.Fatal("expected AddrSrc to match QueryAddress")
+	}
+
+	ctx.Reset()
+	msg2 := &dnstap.Message{ResponseAddress: net.ParseIP("1.1.1.1").To4()}
+	if f.Filter(msg2, ctx) {
+		t.Fatal("expected AddrSrc to NOT match ResponseAddress")
+	}
+}
+
+func TestIPFilter_AddrDst(t *testing.T) {
+	f := NewIPFilter("1.1.1.1", AddrDst)
+	ctx := NewEvalContext()
+
+	msg := makeQueryMessage(t, "example.com.", "1.1.1.1")
+	if f.Filter(msg, ctx) {
+		t.Fatal("expected AddrDst to NOT match QueryAddress-only message")
+	}
+
+	ctx.Reset()
+	msg2 := &dnstap.Message{ResponseAddress: net.ParseIP("1.1.1.1").To4()}
+	if !f.Filter(msg2, ctx) {
+		t.Fatal("expected AddrDst to match ResponseAddress")
+	}
+}
+
 // --- SubnetFilter tests ---
 
 func TestSubnetFilter(t *testing.T) {
-	f := NewSubnetFilter("192.168.1.0/24")
+	f := NewSubnetFilter("192.168.1.0/24", AddrBoth)
 
 	tests := []struct {
 		name string
@@ -323,8 +375,56 @@ func TestSubnetFilter(t *testing.T) {
 	}
 }
 
+func TestSubnetFilter_AddrBoth(t *testing.T) {
+	f := NewSubnetFilter("10.0.0.0/8", AddrBoth)
+	ctx := NewEvalContext()
+
+	msg := makeQueryMessage(t, "example.com.", "10.1.2.3")
+	if !f.Filter(msg, ctx) {
+		t.Fatal("expected AddrBoth to match QueryAddress")
+	}
+
+	ctx.Reset()
+	msg2 := &dnstap.Message{ResponseAddress: net.ParseIP("10.1.2.3").To4()}
+	if !f.Filter(msg2, ctx) {
+		t.Fatal("expected AddrBoth to match ResponseAddress")
+	}
+}
+
+func TestSubnetFilter_AddrSrc(t *testing.T) {
+	f := NewSubnetFilter("10.0.0.0/8", AddrSrc)
+	ctx := NewEvalContext()
+
+	msg := makeQueryMessage(t, "example.com.", "10.1.2.3")
+	if !f.Filter(msg, ctx) {
+		t.Fatal("expected AddrSrc to match QueryAddress")
+	}
+
+	ctx.Reset()
+	msg2 := &dnstap.Message{ResponseAddress: net.ParseIP("10.1.2.3").To4()}
+	if f.Filter(msg2, ctx) {
+		t.Fatal("expected AddrSrc to NOT match ResponseAddress")
+	}
+}
+
+func TestSubnetFilter_AddrDst(t *testing.T) {
+	f := NewSubnetFilter("10.0.0.0/8", AddrDst)
+	ctx := NewEvalContext()
+
+	msg := makeQueryMessage(t, "example.com.", "10.1.2.3")
+	if f.Filter(msg, ctx) {
+		t.Fatal("expected AddrDst to NOT match QueryAddress-only message")
+	}
+
+	ctx.Reset()
+	msg2 := &dnstap.Message{ResponseAddress: net.ParseIP("10.1.2.3").To4()}
+	if !f.Filter(msg2, ctx) {
+		t.Fatal("expected AddrDst to match ResponseAddress")
+	}
+}
+
 func TestSubnetFilter_NilQueryAddress(t *testing.T) {
-	f := NewSubnetFilter("10.0.0.0/8")
+	f := NewSubnetFilter("10.0.0.0/8", AddrBoth)
 	msg := &dnstap.Message{QueryAddress: nil}
 	ctx := NewEvalContext()
 	if f.Filter(msg, ctx) {
@@ -333,9 +433,90 @@ func TestSubnetFilter_NilQueryAddress(t *testing.T) {
 }
 
 func TestSubnetFilter_InvalidCIDR(t *testing.T) {
-	f := NewSubnetFilter("not-a-cidr")
+	f := NewSubnetFilter("not-a-cidr", AddrBoth)
 	if f.Net != nil {
 		t.Fatal("expected nil Net for invalid CIDR")
+	}
+}
+
+// --- PortFilter tests ---
+
+func TestPortFilter(t *testing.T) {
+	f := NewPortFilter("53", AddrBoth)
+	ctx := NewEvalContext()
+
+	qport := uint32(53)
+	msg := &dnstap.Message{QueryPort: &qport}
+	if !f.Filter(msg, ctx) {
+		t.Fatal("expected port=53 to match QueryPort")
+	}
+
+	ctx.Reset()
+	rport := uint32(53)
+	msg2 := &dnstap.Message{ResponsePort: &rport}
+	if !f.Filter(msg2, ctx) {
+		t.Fatal("expected port=53 to match ResponsePort")
+	}
+
+	ctx.Reset()
+	qport3 := uint32(12345)
+	msg3 := &dnstap.Message{QueryPort: &qport3}
+	if f.Filter(msg3, ctx) {
+		t.Fatal("expected port=53 to NOT match QueryPort=12345")
+	}
+}
+
+func TestPortFilter_AddrSrc(t *testing.T) {
+	f := NewPortFilter("53", AddrSrc)
+	ctx := NewEvalContext()
+
+	qport := uint32(53)
+	rport := uint32(53)
+	msg := &dnstap.Message{QueryPort: &qport}
+	if !f.Filter(msg, ctx) {
+		t.Fatal("expected src.port to match QueryPort")
+	}
+
+	ctx.Reset()
+	msg2 := &dnstap.Message{ResponsePort: &rport}
+	if f.Filter(msg2, ctx) {
+		t.Fatal("expected src.port to NOT match ResponsePort")
+	}
+}
+
+func TestPortFilter_AddrDst(t *testing.T) {
+	f := NewPortFilter("53", AddrDst)
+	ctx := NewEvalContext()
+
+	qport := uint32(53)
+	rport := uint32(53)
+	msg := &dnstap.Message{QueryPort: &qport}
+	if f.Filter(msg, ctx) {
+		t.Fatal("expected dst.port to NOT match QueryPort")
+	}
+
+	ctx.Reset()
+	msg2 := &dnstap.Message{ResponsePort: &rport}
+	if !f.Filter(msg2, ctx) {
+		t.Fatal("expected dst.port to match ResponsePort")
+	}
+}
+
+func TestPortFilter_Invalid(t *testing.T) {
+	if NewPortFilter("notanumber", AddrBoth) != nil {
+		t.Fatal("expected nil for invalid port string")
+	}
+	if NewPortFilter("99999", AddrBoth) != nil {
+		t.Fatal("expected nil for port out of uint16 range")
+	}
+}
+
+func TestPortFilter_NilPorts(t *testing.T) {
+	f := NewPortFilter("53", AddrBoth)
+	ctx := NewEvalContext()
+	msg := &dnstap.Message{}
+	if f.Filter(msg, ctx) {
+		t.Fatal("expected false for nil ports")
 	}
 }
 
@@ -604,7 +785,7 @@ func BenchmarkEval_MixedCheapExpensive(b *testing.B) {
 			Value:  "example.com.",
 		},
 		Right: &PredicateNode{
-			Filter: NewIPFilter("1.1.1.1"),
+			Filter: NewIPFilter("1.1.1.1", AddrBoth),
 			Key:    "ip",
 			Value:  "1.1.1.1",
 		},
@@ -630,7 +811,7 @@ func BenchmarkEval_MixedCheapExpensive_ShortCircuit(b *testing.B) {
 			Value:  "example.com.",
 		},
 		Right: &PredicateNode{
-			Filter: NewIPFilter("2.2.2.2"), // won't match -> short-circuit
+			Filter: NewIPFilter("2.2.2.2", AddrBoth), // won't match -> short-circuit
 			Key:    "ip",
 			Value:  "2.2.2.2",
 		},
