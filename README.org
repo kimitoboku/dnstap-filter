@@ -114,22 +114,58 @@ Omitting ~--filter~ matches all messages.
 
 *** Predicates
 
-**** ~ip=<addr>~ — DNS client IP (exact match)
+**** ~ip=<addr>~ — IP address match
 
-Matches messages where the DNS client IP address equals ~<addr>~.
-Only the client (query source) address is checked.
+Matches messages where the query source address (QueryAddress) *or* the response destination address (ResponseAddress) equals ~<addr>~.
+
+Use ~src.ip~ or ~dst.ip~ to restrict matching to a single direction:
+
+| Predicate | Matches |
+|-----------|---------|
+| ~ip=<addr>~ | QueryAddress *or* ResponseAddress |
+| ~src.ip=<addr>~ | QueryAddress only |
+| ~dst.ip=<addr>~ | ResponseAddress only |
 
 #+begin_src sh
 --filter "ip=192.168.1.10"
+--filter "src.ip=192.168.1.10"
+--filter "dst.ip=10.0.0.1"
 #+end_src
 
-**** ~subnet=<CIDR>~ — DNS client IP subnet match
+**** ~subnet=<CIDR>~ — IP subnet match
 
-Matches messages where the DNS client IP falls within the given CIDR range.
+Matches messages where the query source address or response destination address falls within the given CIDR range.
+
+Use ~src.subnet~ or ~dst.subnet~ to restrict matching to a single direction:
+
+| Predicate | Matches |
+|-----------|---------|
+| ~subnet=<CIDR>~ | QueryAddress *or* ResponseAddress |
+| ~src.subnet=<CIDR>~ | QueryAddress only |
+| ~dst.subnet=<CIDR>~ | ResponseAddress only |
 
 #+begin_src sh
 --filter "subnet=192.168.0.0/24"
---filter "subnet=10.0.0.0/8"
+--filter "src.subnet=10.0.0.0/8"
+--filter "dst.subnet=172.16.0.0/12"
+#+end_src
+
+**** ~port=<number>~ — Port number match
+
+Matches messages where the query source port (QueryPort) or response destination port (ResponsePort) equals ~<number>~.
+
+Use ~src.port~ or ~dst.port~ to restrict matching to a single direction:
+
+| Predicate | Matches |
+|-----------|---------|
+| ~port=<number>~ | QueryPort *or* ResponsePort |
+| ~src.port=<number>~ | QueryPort only |
+| ~dst.port=<number>~ | ResponsePort only |
+
+#+begin_src sh
+--filter "port=53"
+--filter "src.port=12345"
+--filter "dst.port=53"
 #+end_src
 
 **** ~fqdn=<name>~ — Query name exact match

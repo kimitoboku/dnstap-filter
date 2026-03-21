@@ -190,8 +190,14 @@ func parsePredicate(tok token) (filter.Node, error) {
 	}
 
 	switch key {
-	case "ip":
-		f := filter.NewIPFilter(value)
+	case "ip", "src.ip", "dst.ip":
+		mode := filter.AddrBoth
+		if key == "src.ip" {
+			mode = filter.AddrSrc
+		} else if key == "dst.ip" {
+			mode = filter.AddrDst
+		}
+		f := filter.NewIPFilter(value, mode)
 		if f.IP == nil {
 			return nil, fmt.Errorf("token %d at char %d ('%s'): invalid ip value", tok.index, tok.pos, tok.lit)
 		}
@@ -202,10 +208,28 @@ func parsePredicate(tok token) (filter.Node, error) {
 		return &filter.PredicateNode{Filter: filter.NewSuffixFilter(value), Key: key, Value: value}, nil
 	case "rcode":
 		return &filter.PredicateNode{Filter: filter.NewRcodeFilter(value), Key: key, Value: value}, nil
-	case "subnet":
-		f := filter.NewSubnetFilter(value)
+	case "subnet", "src.subnet", "dst.subnet":
+		mode := filter.AddrBoth
+		if key == "src.subnet" {
+			mode = filter.AddrSrc
+		} else if key == "dst.subnet" {
+			mode = filter.AddrDst
+		}
+		f := filter.NewSubnetFilter(value, mode)
 		if f.Net == nil {
 			return nil, fmt.Errorf("token %d at char %d ('%s'): invalid CIDR value", tok.index, tok.pos, tok.lit)
+		}
+		return &filter.PredicateNode{Filter: f, Key: key, Value: value}, nil
+	case "port", "src.port", "dst.port":
+		mode := filter.AddrBoth
+		if key == "src.port" {
+			mode = filter.AddrSrc
+		} else if key == "dst.port" {
+			mode = filter.AddrDst
+		}
+		f := filter.NewPortFilter(value, mode)
+		if f == nil {
+			return nil, fmt.Errorf("token %d at char %d ('%s'): invalid port value", tok.index, tok.pos, tok.lit)
 		}
 		return &filter.PredicateNode{Filter: f, Key: key, Value: value}, nil
 	case "qtype":
