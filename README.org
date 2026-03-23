@@ -112,6 +112,10 @@ Optional:
 - ~--filter~: filter expression
 - ~--print-filter-tree~: print the parsed filter tree and exit
 - ~--cout~, ~-c~: process only the first N records from the beginning of input
+- ~--speed~: output pacing based on dnstap timestamps (default ~0~ = max speed)
+  - ~0~ = max speed (no delay, current behavior)
+  - ~1~ = realtime (replay at original timestamp intervals)
+  - ~2~ = 2x speed (half the delay), ~0.5~ = half speed (double the delay)
 
 ** Filter expression
 
@@ -369,6 +373,15 @@ dnstap-filter --filter "ip=1.1.1.1 and (suffix=example.com. or rcode=NXDOMAIN)" 
 
 # Process only first 100 records
 dnstap-filter --in file:input.dnstap --filter "suffix=example.com." --cout 100
+
+# Replay at original timestamp speed (realtime)
+dnstap-filter --in file:input.dnstap --speed 1
+
+# Replay at 2x speed
+dnstap-filter --in file:input.dnstap --speed 2
+
+# Replay at half speed (slow motion)
+dnstap-filter --in file:input.dnstap --speed 0.5
 #+end_src
 
 ** Notes
