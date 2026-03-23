@@ -28,7 +28,7 @@ func NewTimeFilter(value string, after bool) (*TimeFilter, error) {
 }
 
 func (f *TimeFilter) Filter(m *dnstap.Message, _ *EvalContext) bool {
-	t, ok := messageTime(m)
+	t, ok := MessageTime(m)
 	if !ok {
 		return false
 	}
@@ -38,9 +38,9 @@ func (f *TimeFilter) Filter(m *dnstap.Message, _ *EvalContext) bool {
 	return t.Before(f.Threshold) // t < threshold
 }
 
-// messageTime extracts the timestamp from a dnstap message, preferring
+// MessageTime extracts the timestamp from a dnstap message, preferring
 // QueryTimeSec and falling back to ResponseTimeSec.
-func messageTime(m *dnstap.Message) (time.Time, bool) {
+func MessageTime(m *dnstap.Message) (time.Time, bool) {
 	if m.QueryTimeSec != nil {
 		var nsec int64
 		if m.QueryTimeNsec != nil {

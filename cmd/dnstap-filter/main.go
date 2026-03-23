@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/dnstap/golang-dnstap"
 	"google.golang.org/protobuf/proto"
@@ -29,6 +30,7 @@ type cliConfig struct {
 	filterExpr      string
 	printFilterTree bool
 	countLimit      int
+	speed           float64
 }
 
 func parseCLIArgs(args []string) (cliConfig, error) {
@@ -75,6 +77,10 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 	countLimit := 0
 	fs.IntVar(&countLimit, "cout", 0, "process only the first N records from input")
 	fs.IntVar(&countLimit, "c", 0, "shorthand of --cout")
+	speed := fs.Float64("speed", 0, "output pacing based on dnstap timestamps (default 0 = max speed)\n"+
+		"\t0 = max speed (no delay)\n"+
+		"\t1 = realtime (original timestamp intervals)\n"+
+		"\t2 = 2x speed (half the delay), 0.5 = half speed (double the delay)")
 
 	if err := fs.Parse(args); err != nil {
 		return cliConfig{}, err
@@ -84,6 +90,9 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 	}
 	if countLimit < 0 {
 		return cliConfig{}, fmt.Errorf("flag --cout/-c must be >= 0")
+	}
+	if *speed < 0 {
+		return cliConfig{}, fmt.Errorf("flag --speed must be >= 0")
 	}
 	if !*printFilterTree && *in == "" {
 		return cliConfig{}, fmt.Errorf("required flag: --in (or use --print-filter-tree)")
@@ -95,10 +104,11 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 		filterExpr:      *filterExpr,
 		printFilterTree: *printFilterTree,
 		countLimit:      countLimit,
+		speed:           *speed,
 	}, nil
 }
 
-func dnstapFilter(outputChannel chan []byte, root filter.Node, countLimit int) (chan []byte, chan struct{}) {
+func dnstapFilter(outputChannel chan []byte, root filter.Node, countLimit int, speed float64) (chan []byte, chan struct{}) {
 	inputChannel := make(chan []byte, 32)
 	done := make(chan struct{})
 	go func() {
@@ -106,6 +116,8 @@ func dnstapFilter(outputChannel chan []byte, root filter.Node, countLimit int) (
 		dt := &dnstap.Dnstap{}
 		ctx := filter.NewEvalContext()
 		processed := 0
+		var prevTime time.Time
+		var hasPrev bool
 		for frame := range inputChannel {
 			if countLimit > 0 && processed >= countLimit {
 				continue
@@ -120,6 +132,16 @@ func dnstapFilter(outputChannel chan []byte, root filter.Node, countLimit int) (
 				ctx.Reset()
 				if !root.Eval(dt.Message, ctx) {
 					continue
+				}
+				if speed > 0 {
+					if t, ok := filter.MessageTime(dt.Message); ok {
+						if hasPrev && t.After(prevTime) {
+							delay := time.Duration(float64(t.Sub(prevTime)) / speed)
+							time.Sleep(delay)
+						}
+						prevTime = t
+						hasPrev = true
+					}
 				}
 			}
 			outputChannel <- frame
@@ -156,7 +178,7 @@ func run(args []string) error {
 	go o.RunOutputLoop()
 	outputChannel := o.GetOutputChannel()
 
-	inputChannel, filterDone := dnstapFilter(outputChannel, root, cfg.countLimit)
+	inputChannel, filterDone := dnstapFilter(outputChannel, root, cfg.countLimit, cfg.speed)
 	go i.ReadInto(inputChannel)
 	i.Wait()
 	close(inputChannel)
