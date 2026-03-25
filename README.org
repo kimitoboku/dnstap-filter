@@ -61,6 +61,8 @@ Specifies the destination for filtered dnstap data. The format is ~scheme:addres
 | ~tcp:<host:port>~ | ~tcp:127.0.0.1:6001~ | Connect to a TCP collector (client mode) |
 | ~yaml:<path>~ | ~yaml:/tmp/out.yaml~ | Write human-readable YAML format |
 | ~yaml:-~ | ~yaml:-~ | Write human-readable YAML format to stdout |
+| ~jsonl:<path>~ | ~jsonl:/tmp/out.jsonl~ | Write structured JSONL format (one JSON object per line) |
+| ~jsonl:-~ | ~jsonl:-~ | Write structured JSONL format to stdout |
 
 A bare path without a scheme (e.g. ~output.dnstap~) is treated as ~file:~ for backward compatibility.
 
@@ -98,6 +100,43 @@ dnstap-filter --in file:input.dnstap --out stdout:time,msgtype,ip,name,type,rcod
 # Minimal: name and type only
 dnstap-filter --in file:input.dnstap --out stdout:name,type
 #+end_src
+
+**** ~jsonl:~ output
+
+The ~jsonl:~ scheme outputs each dnstap message as a single-line compact JSON object (JSONL / JSON Lines format).
+Each line contains dnstap metadata and a parsed DNS message with header flags, question, answer, authority, and additional sections.
+
+#+begin_src json
+{"type":"MESSAGE","message_type":"CLIENT_RESPONSE","timestamp":"2024-01-01T00:00:00Z","socket_family":"INET","socket_protocol":"UDP","query_address":"192.168.1.100","query_port":12345,"dns":{"id":1234,"qr":true,"opcode":"QUERY","rcode":"NOERROR","flags":{"aa":false,"tc":false,"rd":true,"ra":true,"ad":false,"cd":false},"question":[{"name":"www.example.com.","type":"A","class":"IN"}],"answer":[{"name":"www.example.com.","type":"A","class":"IN","ttl":300,"data":"93.184.216.34"}],"authority":[],"additional":[]}}
+#+end_src
+
+Top-level fields:
+
+| Field | Description |
+|-------|-------------|
+| ~type~ | Dnstap type (always ~MESSAGE~) |
+| ~message_type~ | Message type (~CLIENT_QUERY~, ~CLIENT_RESPONSE~, etc.) |
+| ~timestamp~ | Timestamp in RFC3339Nano format (UTC) |
+| ~socket_family~ | ~INET~ or ~INET6~ (omitted if unavailable) |
+| ~socket_protocol~ | ~UDP~ or ~TCP~ (omitted if unavailable) |
+| ~query_address~ | Client IP address (omitted if unavailable) |
+| ~query_port~ | Client port (omitted if 0) |
+| ~response_address~ | Server IP address (omitted if unavailable) |
+| ~response_port~ | Server port (omitted if 0) |
+
+The ~dns~ object contains the parsed DNS message:
+
+| Field | Description |
+|-------|-------------|
+| ~dns.id~ | DNS message ID |
+| ~dns.qr~ | ~true~ for response, ~false~ for query |
+| ~dns.opcode~ | Opcode (~QUERY~, ~IQUERY~, ~STATUS~, etc.) |
+| ~dns.rcode~ | Response code (~NOERROR~, ~NXDOMAIN~, etc.) |
+| ~dns.flags~ | Header flags (~aa~, ~tc~, ~rd~, ~ra~, ~ad~, ~cd~) |
+| ~dns.question~ | Question section (array of ~{name, type, class}~) |
+| ~dns.answer~ | Answer section (array of ~{name, type, class, ttl, data}~) |
+| ~dns.authority~ | Authority section |
+| ~dns.additional~ | Additional section |
 
 Note: ~unix:~ and ~tcp:~ outputs are clients that connect to a collector. If the collector is not
 available, they retry every 10 seconds.
@@ -307,6 +346,15 @@ dnstap-filter --in file:input.dnstap --out yaml:- --filter "ip=1.1.1.1"
 # Write filtered records as YAML to a file
 dnstap-filter --in file:input.dnstap --out yaml:/tmp/filtered.yaml --filter "suffix=.evil.com."
 
+# Inspect filtered records as JSONL on stdout
+dnstap-filter --in file:input.dnstap --out jsonl:- --filter "ip=1.1.1.1"
+
+# Write filtered records as JSONL to a file
+dnstap-filter --in file:input.dnstap --out jsonl:/tmp/filtered.jsonl --filter "suffix=.evil.com."
+
+# JSONL output piped to jq for pretty printing
+dnstap-filter --in file:input.dnstap --out jsonl:- --filter "rcode=NXDOMAIN" | jq .
+
 # Forward from Unix socket to a TCP collector
 dnstap-filter --in unix:/var/run/named/dnstap.sock --out tcp:collector.example.com:6000 --filter "rcode=NXDOMAIN"
 
@@ -389,5 +437,6 @@ dnstap-filter --in file:input.dnstap --speed 0.5
 - The program exits with an error at startup if the filter expression is invalid.
 - ~and~ / ~or~ / ~not~ operators are case-insensitive.
 - ~yaml:~ output is human-readable and cannot be used as input to another ~dnstap-filter~ instance.
+- ~jsonl:~ output produces one compact JSON object per line (JSONL format), suitable for processing with tools like ~jq~.
 - File output (~file:~) supports SIGHUP for log rotation (closes and reopens the output file).
 - The legacy positional-argument CLI (~input output ip~) has been removed.
