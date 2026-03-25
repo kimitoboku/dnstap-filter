@@ -39,7 +39,7 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 
 	in := fs.String("in", "", "input spec: file:<path> | unix:<path> | tcp:<host:port> | pcap:<path> | device:<iface>")
 	var outSpecs stringSlice
-	fs.Var(&outSpecs, "out", "output spec (repeatable): file:<path> | unix:<path> | tcp:<host:port> | yaml:<path>|yaml:-\n"+
+	fs.Var(&outSpecs, "out", "output spec (repeatable): file:<path> | unix:<path> | tcp:<host:port> | yaml:<path>|yaml:- | jsonl:<path>|jsonl:-\n"+
 		"\tstdout:<fields> - customizable stdout (comma-separated fields)\n"+
 		"\t  fields: time, qr, msgtype, name, type, rcode, ip\n"+
 		"\t  example: stdout:time,qr,name,type,rcode\n"+

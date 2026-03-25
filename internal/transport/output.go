@@ -280,6 +280,7 @@ func ParseOutputs(specs []string) (dnstap.Output, error) {
 //   - unix:<path>          - Unix domain socket client (connects to a collector)
 //   - tcp:<host:port>      - TCP client (connects to a collector)
 //   - yaml:<path>|yaml:-   - human-readable YAML format (- means stdout)
+//   - jsonl:<path>|jsonl:-  - structured JSONL format (one JSON object per line, - means stdout)
 //
 // Bare paths without a scheme are treated as file: (backward compatibility).
 func ParseOutput(spec string) (dnstap.Output, error) {
@@ -315,6 +316,8 @@ func ParseOutput(spec string) (dnstap.Output, error) {
 		return dnstap.NewFrameStreamSockOutput(addr)
 	case schemeYAML:
 		return dnstap.NewTextOutputFromFilename(u.address, dnstap.YamlFormat, false)
+	case schemeJSONL:
+		return dnstap.NewTextOutputFromFilename(u.address, jsonlOutputFormat, false)
 	default:
 		return nil, fmt.Errorf("unsupported output scheme %q", u.scheme)
 	}
