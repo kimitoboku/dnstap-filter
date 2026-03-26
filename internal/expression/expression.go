@@ -244,6 +244,12 @@ func parsePredicate(tok token) (filter.Node, error) {
 			return nil, fmt.Errorf("token %d at char %d ('%s'): %w", tok.index, tok.pos, tok.lit, err)
 		}
 		return &filter.PredicateNode{Filter: f, Key: key, Value: value}, nil
+	case "rdata.size":
+		f, err := filter.NewRdataSizeFilter(value)
+		if err != nil {
+			return nil, fmt.Errorf("token %d at char %d ('%s'): %w", tok.index, tok.pos, tok.lit, err)
+		}
+		return &filter.PredicateNode{Filter: f, Key: key, Value: value}, nil
 	case "msgtype":
 		f := filter.NewMsgTypeFilter(value)
 		if f == nil {
