@@ -307,6 +307,22 @@ The match mode is determined automatically from ~<value>~:
 --filter "rdata=v=DKIM1"
 #+end_src
 
+**** ~rdata.size=<n>~ — Response answer record count
+
+Matches DNS response messages where the number of records in the Answer section equals ~<n>~.
+~<n>~ must be a non-negative integer.
+
+#+begin_src sh
+# Responses with exactly 1 answer record
+--filter "rdata.size=1"
+
+# Responses with no answer records (empty answer section)
+--filter "rdata.size=0"
+
+# Responses with exactly 3 answer records (e.g. round-robin A records)
+--filter "rdata.size=3"
+#+end_src
+
 **** ~msgtype=<type>~ — dnstap message type
 
 Matches messages of a specific dnstap message type.
@@ -397,6 +413,12 @@ dnstap-filter --in file:input.dnstap --filter "rdata=10.0.0.0/8"
 
 # Filter responses containing specific TXT content
 dnstap-filter --in file:input.dnstap --filter "rdata=v=spf1"
+
+# Filter responses with exactly 3 answer records
+dnstap-filter --in file:input.dnstap --filter "rdata.size=3"
+
+# Filter responses with no answer records
+dnstap-filter --in file:input.dnstap --filter "rdata.size=0"
 
 # Filter only client queries (not responses)
 dnstap-filter --in file:input.dnstap --filter "msgtype=CLIENT_QUERY"
