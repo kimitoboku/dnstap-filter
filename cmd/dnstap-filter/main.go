@@ -43,6 +43,8 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 		"\tstdout:<fields> - customizable stdout (comma-separated fields)\n"+
 		"\t  fields: time, qr, msgtype, name, type, rcode, ip\n"+
 		"\t  example: stdout:time,qr,name,type,rcode\n"+
+		"\tdns:<host:port> - replay DNS queries to target server (UDP, fire-and-forget)\n"+
+		"\t  example: dns:8.8.8.8:53\n"+
 		"\t(can be specified multiple times for fan-out to multiple destinations)\n"+
 		"\t(default: print \"<time> <Q|R> <name> <type> [<rcode>]\" to stdout)")
 	filterExpr := fs.String("filter", "", "filter expression (omit to match all)\n"+
