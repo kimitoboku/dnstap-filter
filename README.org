@@ -63,6 +63,7 @@ Specifies the destination for filtered dnstap data. The format is ~scheme:addres
 | ~yaml:-~ | ~yaml:-~ | Write human-readable YAML format to stdout |
 | ~jsonl:<path>~ | ~jsonl:/tmp/out.jsonl~ | Write structured JSONL format (one JSON object per line) |
 | ~jsonl:-~ | ~jsonl:-~ | Write structured JSONL format to stdout |
+| ~dns:<host:port>~ | ~dns:8.8.8.8:53~ | Replay DNS queries to target server (UDP, fire-and-forget) |
 
 A bare path without a scheme (e.g. ~output.dnstap~) is treated as ~file:~ for backward compatibility.
 
@@ -137,6 +138,30 @@ The ~dns~ object contains the parsed DNS message:
 | ~dns.answer~ | Answer section (array of ~{name, type, class, ttl, data}~) |
 | ~dns.authority~ | Authority section |
 | ~dns.additional~ | Additional section |
+
+**** ~dns:~ output (DNS replay)
+
+The ~dns:~ scheme replays DNS query messages from dnstap data to a target DNS server via UDP.
+Only query-type messages (CLIENT_QUERY, RESOLVER_QUERY, etc.) are sent; response messages are silently skipped.
+The output is fire-and-forget — DNS responses from the target server are not read.
+
+If the port is omitted (e.g. ~dns:8.8.8.8~), port 53 is used by default.
+
+Combined with the ~--speed~ flag, this can be used to replay captured DNS traffic at the original pace or at a custom speed.
+
+#+begin_src sh
+# Replay queries to 8.8.8.8
+dnstap-filter --in file:input.dnstap --out dns:8.8.8.8:53
+
+# Replay at original timestamp speed
+dnstap-filter --in file:input.dnstap --out dns:8.8.8.8:53 --speed 1
+
+# Replay only A queries to a local server
+dnstap-filter --in file:input.dnstap --out dns:127.0.0.1:5353 --filter "qtype=A"
+
+# Monitor on stdout while replaying
+dnstap-filter --in file:input.dnstap --out stdout: --out dns:192.168.1.1:53
+#+end_src
 
 Note: ~unix:~ and ~tcp:~ outputs are clients that connect to a collector. If the collector is not
 available, they retry every 10 seconds.
@@ -430,6 +455,18 @@ dnstap-filter --in file:input.dnstap --speed 2
 
 # Replay at half speed (slow motion)
 dnstap-filter --in file:input.dnstap --speed 0.5
+
+# Replay DNS queries to a target server
+dnstap-filter --in file:input.dnstap --out dns:8.8.8.8:53
+
+# Replay at original speed to a local DNS server
+dnstap-filter --in file:input.dnstap --out dns:127.0.0.1:5353 --speed 1
+
+# Replay only specific queries with filtering
+dnstap-filter --in file:input.dnstap --out dns:192.168.1.1:53 --filter "suffix=example.com. and qtype=A"
+
+# Monitor replayed queries on stdout simultaneously
+dnstap-filter --in file:input.dnstap --out stdout:time,name,type --out dns:8.8.8.8:53 --speed 1
 #+end_src
 
 ** Notes
