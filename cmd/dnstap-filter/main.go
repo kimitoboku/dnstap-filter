@@ -4,7 +4,9 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/signal"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/dnstap/golang-dnstap"
@@ -237,7 +239,26 @@ func run(args []string) error {
 
 	inputChannel, filterDone := dnstapFilter(outputChannel, root, cfg.countLimit, cfg.speed, collector)
 	go i.ReadInto(inputChannel)
-	i.Wait()
+
+	// Handle SIGINT/SIGTERM for graceful shutdown so that stats reports
+	// and other outputs are flushed before exit.
+	sigCh := make(chan os.Signal, 1)
+	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
+
+	// Wait for either normal input completion or a signal.
+	inputDone := make(chan struct{})
+	go func() {
+		i.Wait()
+		close(inputDone)
+	}()
+
+	select {
+	case <-inputDone:
+		// Input finished normally (e.g. file/pcap EOF).
+	case <-sigCh:
+		// Signal received; proceed to graceful shutdown.
+	}
+
 	close(inputChannel)
 	<-filterDone
 	o.Close()
