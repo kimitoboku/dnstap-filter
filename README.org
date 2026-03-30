@@ -64,6 +64,7 @@ Specifies the destination for filtered dnstap data. The format is ~scheme:addres
 | ~jsonl:<path>~ | ~jsonl:/tmp/out.jsonl~ | Write structured JSONL format (one JSON object per line) |
 | ~jsonl:-~ | ~jsonl:-~ | Write structured JSONL format to stdout |
 | ~dns:<host:port>~ | ~dns:8.8.8.8:53~ | Replay DNS queries to target server (UDP, fire-and-forget) |
+| ~stats:<path>~ | ~stats:report.html~ | Statistics report (format by extension: ~.html~, ~.json~, ~.xml~) |
 
 A bare path without a scheme (e.g. ~output.dnstap~) is treated as ~file:~ for backward compatibility.
 
@@ -161,6 +162,50 @@ dnstap-filter --in file:input.dnstap --out dns:127.0.0.1:5353 --filter "qtype=A"
 
 # Monitor on stdout while replaying
 dnstap-filter --in file:input.dnstap --out stdout: --out dns:192.168.1.1:53
+#+end_src
+
+**** ~stats:~ output (statistics report)
+
+The ~stats:~ scheme collects statistics from filtered dnstap messages and writes a report on exit.
+Statistics are aggregated in 60-second time windows.
+
+The output format is determined by the file extension:
+
+| Extension | Format | Description |
+|-----------|--------|-------------|
+| ~.html~ | HTML | Human-readable report with tables and styling |
+| ~.json~ | JSON | Machine-readable structured data |
+| ~.xml~ | XML | DSC (DNS Statistics Collector) compatible format |
+| ~-~ | JSON | JSON output to stdout |
+
+Collected statistics per window:
+
+- *Total frame count* — number of matched messages
+- *Top-N queried domains* — most frequently queried domain names (default N=20)
+- *Query type distribution* — count of each DNS query type (A, AAAA, MX, etc.)
+- *Response code distribution* — count of each response code (NOERROR, NXDOMAIN, etc.)
+- *Top-N client IPs* — most active client IP addresses (default N=20)
+
+The report includes per-window breakdowns and an all-time summary.
+
+#+begin_src sh
+# Generate an HTML statistics report
+dnstap-filter --in file:input.dnstap --out stats:report.html
+
+# Generate a JSON statistics report
+dnstap-filter --in file:input.dnstap --out stats:report.json
+
+# Generate a DSC-compatible XML report
+dnstap-filter --in file:input.dnstap --out stats:report.xml
+
+# Print JSON stats to stdout
+dnstap-filter --in file:input.dnstap --out stats:-
+
+# Combine with regular output: monitor on stdout while collecting stats
+dnstap-filter --in file:input.dnstap --out stdout --out stats:report.html --filter "suffix=example.com."
+
+# Filter and collect stats simultaneously
+dnstap-filter --in unix:/var/run/named/dnstap.sock --out file:output.dnstap --out stats:stats.html --filter "rcode=NXDOMAIN"
 #+end_src
 
 Note: ~unix:~ and ~tcp:~ outputs are clients that connect to a collector. If the collector is not
@@ -489,6 +534,15 @@ dnstap-filter --in file:input.dnstap --out dns:192.168.1.1:53 --filter "suffix=e
 
 # Monitor replayed queries on stdout simultaneously
 dnstap-filter --in file:input.dnstap --out stdout:time,name,type --out dns:8.8.8.8:53 --speed 1
+
+# Generate an HTML statistics report from filtered data
+dnstap-filter --in file:input.dnstap --out stats:report.html --filter "suffix=example.com."
+
+# Generate a DSC-compatible XML statistics report
+dnstap-filter --in file:input.dnstap --out stats:report.xml
+
+# Collect stats while monitoring on stdout
+dnstap-filter --in file:input.dnstap --out stdout:time,name,type --out stats:stats.json --filter "rcode=NXDOMAIN"
 #+end_src
 
 ** Notes

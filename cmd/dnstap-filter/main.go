@@ -12,6 +12,7 @@ import (
 
 	"github.com/kimitoboku/dnstap-filter/internal/expression"
 	"github.com/kimitoboku/dnstap-filter/internal/filter"
+	"github.com/kimitoboku/dnstap-filter/internal/stats"
 	"github.com/kimitoboku/dnstap-filter/internal/transport"
 )
 
@@ -45,6 +46,10 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 		"\t  example: stdout:time,qr,name,type,rcode\n"+
 		"\tdns:<host:port> - replay DNS queries to target server (UDP, fire-and-forget)\n"+
 		"\t  example: dns:8.8.8.8:53\n"+
+		"\tstats:<path> - statistics report (format by extension: .html, .json, .xml)\n"+
+		"\t  collects Top-N domains, qtype/rcode distribution, client IP counts\n"+
+		"\t  uses 60-second time windows; report written on exit\n"+
+		"\t  example: stats:report.html  stats:report.json  stats:- (JSON to stdout)\n"+
 		"\t(can be specified multiple times for fan-out to multiple destinations)\n"+
 		"\t(default: print \"<time> <Q|R> <name> <type> [<rcode>]\" to stdout)")
 	filterExpr := fs.String("filter", "", "filter expression (omit to match all)\n"+
@@ -110,7 +115,7 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 	}, nil
 }
 
-func dnstapFilter(outputChannel chan []byte, root filter.Node, countLimit int, speed float64) (chan []byte, chan struct{}) {
+func dnstapFilter(outputChannel chan []byte, root filter.Node, countLimit int, speed float64, collector *stats.Collector) (chan []byte, chan struct{}) {
 	inputChannel := make(chan []byte, 32)
 	done := make(chan struct{})
 	go func() {
@@ -134,6 +139,10 @@ func dnstapFilter(outputChannel chan []byte, root filter.Node, countLimit int, s
 				ctx.Reset()
 				if !root.Eval(dt.Message, ctx) {
 					continue
+				}
+				if collector != nil {
+					dnsMsg := ctx.UnpackQueryOrResponse(dt.Message)
+					collector.Record(dt.Message, dnsMsg)
 				}
 				if speed > 0 {
 					if t, ok := filter.MessageTime(dt.Message); ok {
@@ -173,14 +182,60 @@ func run(args []string) error {
 		return fmt.Errorf("input: %w", err)
 	}
 
-	o, err := transport.ParseOutputs(cfg.outputSpecs)
-	if err != nil {
-		return fmt.Errorf("output: %w", err)
+	// Separate stats specs from regular output specs.
+	var collector *stats.Collector
+	var statsOuts []dnstap.Output
+	var regularSpecs []string
+	for _, spec := range cfg.outputSpecs {
+		if transport.IsStatsSpec(spec) {
+			if collector == nil {
+				collector = stats.NewCollector(20)
+			}
+			addr, err := transport.StatsAddress(spec)
+			if err != nil {
+				return fmt.Errorf("output: %w", err)
+			}
+			so, err := transport.NewStatsOutput(collector, addr)
+			if err != nil {
+				return fmt.Errorf("output: %w", err)
+			}
+			statsOuts = append(statsOuts, so)
+		} else {
+			regularSpecs = append(regularSpecs, spec)
+		}
 	}
+
+	// Build combined output: regular outputs + stats outputs.
+	var allOutputs []dnstap.Output
+	if len(regularSpecs) == 0 && len(statsOuts) == 0 {
+		// No specs at all: use default stdout.
+		o, err := transport.ParseOutput("")
+		if err != nil {
+			return fmt.Errorf("output: %w", err)
+		}
+		allOutputs = append(allOutputs, o)
+	} else {
+		for _, spec := range regularSpecs {
+			o, err := transport.ParseOutput(spec)
+			if err != nil {
+				return fmt.Errorf("output: %w", err)
+			}
+			allOutputs = append(allOutputs, o)
+		}
+		allOutputs = append(allOutputs, statsOuts...)
+	}
+
+	var o dnstap.Output
+	if len(allOutputs) == 1 {
+		o = allOutputs[0]
+	} else {
+		o = transport.NewMultiOutput(allOutputs)
+	}
+
 	go o.RunOutputLoop()
 	outputChannel := o.GetOutputChannel()
 
-	inputChannel, filterDone := dnstapFilter(outputChannel, root, cfg.countLimit, cfg.speed)
+	inputChannel, filterDone := dnstapFilter(outputChannel, root, cfg.countLimit, cfg.speed, collector)
 	go i.ReadInto(inputChannel)
 	i.Wait()
 	close(inputChannel)
