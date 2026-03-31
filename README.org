@@ -173,9 +173,10 @@ The output format is determined by the file extension:
 
 | Extension | Format | Description |
 |-----------|--------|-------------|
-| ~.html~ | HTML | Human-readable report with tables and styling |
+| ~.html~ | HTML | Human-readable report with tables and time-series charts |
 | ~.json~ | JSON | Machine-readable structured data |
 | ~.xml~ | XML | DSC (DNS Statistics Collector) compatible format |
+| ~.md~ | Markdown | Markdown document with tables |
 | ~-~ | JSON | JSON output to stdout |
 
 Collected statistics per window:
@@ -188,8 +189,14 @@ Collected statistics per window:
 
 The report includes per-window breakdowns and an all-time summary.
 
+Three optional flags control how statistics are aggregated:
+
+- ~--stats-top-n=N~ — number of top entries to keep in domain and client IP rankings (default: 20)
+- ~--stats-domain-labels=N~ — aggregate query names by the last N DNS labels; e.g. N=2 maps ~www.example.com.~ → ~example.com.~ (default: 0 = full qname)
+- ~--stats-subnet-prefix=N~ — mask client IPs to a prefix length before counting; e.g. N=24 groups all IPs in the same /24 (default: 0 = no masking)
+
 #+begin_src sh
-# Generate an HTML statistics report
+# Generate an HTML statistics report (with time-series charts)
 dnstap-filter --in file:input.dnstap --out stats:report.html
 
 # Generate a JSON statistics report
@@ -198,8 +205,24 @@ dnstap-filter --in file:input.dnstap --out stats:report.json
 # Generate a DSC-compatible XML report
 dnstap-filter --in file:input.dnstap --out stats:report.xml
 
+# Generate a Markdown report
+dnstap-filter --in file:input.dnstap --out stats:report.md
+
 # Print JSON stats to stdout
 dnstap-filter --in file:input.dnstap --out stats:-
+
+# Keep only top 50 entries in rankings
+dnstap-filter --in file:input.dnstap --out stats:report.html --stats-top-n 50
+
+# Aggregate domains by last 2 labels (e.g. www.example.com. -> example.com.)
+dnstap-filter --in file:input.dnstap --out stats:report.html --stats-domain-labels 2
+
+# Group client IPs by /24 subnet
+dnstap-filter --in file:input.dnstap --out stats:report.html --stats-subnet-prefix 24
+
+# Combine multiple aggregation options
+dnstap-filter --in file:input.dnstap --out stats:report.html \
+  --stats-top-n 30 --stats-domain-labels 2 --stats-subnet-prefix 24
 
 # Combine with regular output: monitor on stdout while collecting stats
 dnstap-filter --in file:input.dnstap --out stdout --out stats:report.html --filter "suffix=example.com."
@@ -225,6 +248,9 @@ Optional:
   - ~0~ = max speed (no delay, current behavior)
   - ~1~ = realtime (replay at original timestamp intervals)
   - ~2~ = 2x speed (half the delay), ~0.5~ = half speed (double the delay)
+- ~--stats-top-n~: top-N entry limit for domain and client IP rankings in ~stats:~ output (default: 20)
+- ~--stats-domain-labels~: aggregate query names by last N DNS labels in ~stats:~ output (default: 0 = full qname)
+- ~--stats-subnet-prefix~: mask client IPs to prefix length in ~stats:~ output (default: 0 = no masking)
 
 ** Filter expression
 
@@ -535,14 +561,21 @@ dnstap-filter --in file:input.dnstap --out dns:192.168.1.1:53 --filter "suffix=e
 # Monitor replayed queries on stdout simultaneously
 dnstap-filter --in file:input.dnstap --out stdout:time,name,type --out dns:8.8.8.8:53 --speed 1
 
-# Generate an HTML statistics report from filtered data
+# Generate an HTML statistics report (includes time-series charts)
 dnstap-filter --in file:input.dnstap --out stats:report.html --filter "suffix=example.com."
 
 # Generate a DSC-compatible XML statistics report
 dnstap-filter --in file:input.dnstap --out stats:report.xml
 
+# Generate a Markdown statistics report
+dnstap-filter --in file:input.dnstap --out stats:report.md
+
 # Collect stats while monitoring on stdout
 dnstap-filter --in file:input.dnstap --out stdout:time,name,type --out stats:stats.json --filter "rcode=NXDOMAIN"
+
+# Aggregate by second-level domain and /24 subnet
+dnstap-filter --in file:input.dnstap --out stats:report.html \
+  --stats-domain-labels 2 --stats-subnet-prefix 24
 #+end_src
 
 ** Notes

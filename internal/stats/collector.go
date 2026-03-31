@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"net"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 
@@ -28,23 +29,44 @@ type Snapshot struct {
 	ClientIPs   []RankedEntry `json:"client_ips"`
 }
 
+// CollectorOptions controls how the Collector aggregates statistics.
+type CollectorOptions struct {
+	// TopN is the maximum number of entries kept in domain and client IP
+	// rankings. Default: 20.
+	TopN int
+
+	// DomainLabels controls domain name aggregation. When > 0, query names
+	// are truncated to the last N DNS labels before counting. For example,
+	// with DomainLabels=2, both "www.example.com." and "mail.example.com."
+	// are counted as "example.com.". 0 means full qname (no aggregation).
+	DomainLabels int
+
+	// SubnetPrefix masks client IP addresses to a prefix length before
+	// counting, grouping addresses into subnets. For example, SubnetPrefix=24
+	// groups all IPs in the same /24 together (e.g. "192.0.2.0/24").
+	// 0 means no masking (use the full address).
+	SubnetPrefix int
+}
+
 // Collector accumulates DNS statistics from dnstap messages.
 // It is safe for concurrent use from a single writer goroutine
 // plus multiple reader goroutines.
 type Collector struct {
 	mu      sync.Mutex
-	topN    int
+	opts    CollectorOptions
 	current *window
 	history []*Snapshot
 	allTime *window
 }
 
-// NewCollector creates a new Collector. topN controls how many entries
-// are kept in Top-N rankings (domains, client IPs).
-func NewCollector(topN int) *Collector {
+// NewCollector creates a new Collector with the given options.
+func NewCollector(opts CollectorOptions) *Collector {
+	if opts.TopN <= 0 {
+		opts.TopN = 20
+	}
 	now := time.Now()
 	return &Collector{
-		topN:    topN,
+		opts:    opts,
 		current: newWindow(now),
 		allTime: newWindow(now),
 	}
@@ -64,7 +86,7 @@ func (c *Collector) Record(msg *dnstap.Message, dnsMsg *dns.Msg) {
 
 	// Client IP from QueryAddress.
 	if msg.QueryAddress != nil {
-		ip := net.IP(msg.QueryAddress).String()
+		ip := c.normalizeIP(msg.QueryAddress)
 		c.current.clientIPs[ip]++
 		c.allTime.clientIPs[ip]++
 	}
@@ -75,7 +97,7 @@ func (c *Collector) Record(msg *dnstap.Message, dnsMsg *dns.Msg) {
 
 	// Query name and type from the first question.
 	if len(dnsMsg.Question) > 0 {
-		qname := dnsMsg.Question[0].Name
+		qname := c.normalizeDomain(dnsMsg.Question[0].Name)
 		c.current.domains[qname]++
 		c.allTime.domains[qname]++
 
@@ -93,6 +115,33 @@ func (c *Collector) Record(msg *dnstap.Message, dnsMsg *dns.Msg) {
 	}
 }
 
+// normalizeDomain applies label-level aggregation to a DNS name.
+func (c *Collector) normalizeDomain(qname string) string {
+	if c.opts.DomainLabels <= 0 {
+		return qname
+	}
+	labels := dns.SplitDomainName(qname) // returns labels without trailing dot
+	if labels == nil || len(labels) <= c.opts.DomainLabels {
+		return qname
+	}
+	return strings.Join(labels[len(labels)-c.opts.DomainLabels:], ".") + "."
+}
+
+// normalizeIP applies subnet masking to a raw IP address byte slice.
+func (c *Collector) normalizeIP(rawIP []byte) string {
+	ip := net.IP(rawIP)
+	if c.opts.SubnetPrefix <= 0 {
+		return ip.String()
+	}
+	ip4 := ip.To4()
+	if ip4 != nil {
+		mask := net.CIDRMask(c.opts.SubnetPrefix, 32)
+		return fmt.Sprintf("%s/%d", ip4.Mask(mask).String(), c.opts.SubnetPrefix)
+	}
+	mask := net.CIDRMask(c.opts.SubnetPrefix, 128)
+	return fmt.Sprintf("%s/%d", ip.Mask(mask).String(), c.opts.SubnetPrefix)
+}
+
 // Rotate closes the current window, converts it to a Snapshot, appends
 // it to history, and opens a new window. Returns the completed snapshot.
 func (c *Collector) Rotate() *Snapshot {
@@ -100,7 +149,7 @@ func (c *Collector) Rotate() *Snapshot {
 	defer c.mu.Unlock()
 
 	now := time.Now()
-	snap := c.current.snapshot(now, c.topN)
+	snap := c.current.snapshot(now, c.opts.TopN)
 	c.history = append(c.history, snap)
 	c.current = newWindow(now)
 	return snap
@@ -110,7 +159,7 @@ func (c *Collector) Rotate() *Snapshot {
 func (c *Collector) AllTimeSnapshot() *Snapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.allTime.snapshot(time.Now(), c.topN)
+	return c.allTime.snapshot(time.Now(), c.opts.TopN)
 }
 
 // History returns a copy of the completed window snapshots.

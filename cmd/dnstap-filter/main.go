@@ -28,12 +28,15 @@ func (s *stringSlice) Set(val string) error {
 }
 
 type cliConfig struct {
-	inputSpec       string
-	outputSpecs     []string
-	filterExpr      string
-	printFilterTree bool
-	countLimit      int
-	speed           float64
+	inputSpec         string
+	outputSpecs       []string
+	filterExpr        string
+	printFilterTree   bool
+	countLimit        int
+	speed             float64
+	statsTopN         int
+	statsDomainLabels int
+	statsSubnetPrefix int
 }
 
 func parseCLIArgs(args []string) (cliConfig, error) {
@@ -90,6 +93,11 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 		"\t0 = max speed (no delay)\n"+
 		"\t1 = realtime (original timestamp intervals)\n"+
 		"\t2 = 2x speed (half the delay), 0.5 = half speed (double the delay)")
+	statsTopN := fs.Int("stats-top-n", 20, "number of top entries to keep in stats rankings (domains, client IPs)")
+	statsDomainLabels := fs.Int("stats-domain-labels", 0, "aggregate query names by last N DNS labels (0 = full qname)\n"+
+		"\texample: --stats-domain-labels=2 maps www.example.com. -> example.com.")
+	statsSubnetPrefix := fs.Int("stats-subnet-prefix", 0, "mask client IPs to prefix length for subnet aggregation (0 = no masking)\n"+
+		"\texample: --stats-subnet-prefix=24 groups IPs into /24 subnets")
 
 	if err := fs.Parse(args); err != nil {
 		return cliConfig{}, err
@@ -108,12 +116,15 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 	}
 
 	return cliConfig{
-		inputSpec:       *in,
-		outputSpecs:     []string(outSpecs),
-		filterExpr:      *filterExpr,
-		printFilterTree: *printFilterTree,
-		countLimit:      countLimit,
-		speed:           *speed,
+		inputSpec:         *in,
+		outputSpecs:       []string(outSpecs),
+		filterExpr:        *filterExpr,
+		printFilterTree:   *printFilterTree,
+		countLimit:        countLimit,
+		speed:             *speed,
+		statsTopN:         *statsTopN,
+		statsDomainLabels: *statsDomainLabels,
+		statsSubnetPrefix: *statsSubnetPrefix,
 	}, nil
 }
 
@@ -191,7 +202,11 @@ func run(args []string) error {
 	for _, spec := range cfg.outputSpecs {
 		if transport.IsStatsSpec(spec) {
 			if collector == nil {
-				collector = stats.NewCollector(20)
+				collector = stats.NewCollector(stats.CollectorOptions{
+					TopN:         cfg.statsTopN,
+					DomainLabels: cfg.statsDomainLabels,
+					SubnetPrefix: cfg.statsSubnetPrefix,
+				})
 			}
 			addr, err := transport.StatsAddress(spec)
 			if err != nil {

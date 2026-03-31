@@ -16,6 +16,7 @@ const (
 	statsFormatJSON statsFormat = iota
 	statsFormatHTML
 	statsFormatXML
+	statsFormatMarkdown
 )
 
 // StatsOutput implements dnstap.Output. It manages the rotation ticker
@@ -58,8 +59,10 @@ func parseStatsFormat(address string) (statsFormat, error) {
 		return statsFormatJSON, nil
 	case ".xml":
 		return statsFormatXML, nil
+	case ".md", ".markdown":
+		return statsFormatMarkdown, nil
 	default:
-		return 0, fmt.Errorf("unsupported stats output extension %q (use .html, .json, or .xml)", ext)
+		return 0, fmt.Errorf("unsupported stats output extension %q (use .html, .json, .xml, or .md)", ext)
 	}
 }
 
@@ -118,6 +121,8 @@ func (s *StatsOutput) writeReport() {
 		err = stats.RenderHTML(w, windows, allTime)
 	case statsFormatXML:
 		err = stats.RenderXML(w, windows, allTime)
+	case statsFormatMarkdown:
+		err = stats.RenderMarkdown(w, windows, allTime)
 	}
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "stats: failed to write report: %v\n", err)

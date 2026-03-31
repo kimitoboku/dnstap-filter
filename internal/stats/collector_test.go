@@ -52,7 +52,7 @@ func makeMessage(qname string, qtype uint16, rcode int, clientIP string, isRespo
 }
 
 func TestCollectorRecord(t *testing.T) {
-	c := NewCollector(5)
+	c := NewCollector(CollectorOptions{TopN: 5})
 
 	msg, dnsMsg := makeMessage("example.com.", dns.TypeA, 0, "10.0.0.1", false)
 	c.Record(msg, dnsMsg)
@@ -77,7 +77,7 @@ func TestCollectorRecord(t *testing.T) {
 }
 
 func TestCollectorResponseRcode(t *testing.T) {
-	c := NewCollector(5)
+	c := NewCollector(CollectorOptions{TopN: 5})
 
 	msg, dnsMsg := makeMessage("example.com.", dns.TypeA, dns.RcodeNameError, "10.0.0.1", true)
 	c.Record(msg, dnsMsg)
@@ -89,7 +89,7 @@ func TestCollectorResponseRcode(t *testing.T) {
 }
 
 func TestCollectorTopN(t *testing.T) {
-	c := NewCollector(3)
+	c := NewCollector(CollectorOptions{TopN: 3})
 
 	domains := []string{"a.com.", "b.com.", "c.com.", "d.com.", "e.com."}
 	counts := []int{10, 5, 8, 1, 3}
@@ -114,7 +114,7 @@ func TestCollectorTopN(t *testing.T) {
 }
 
 func TestCollectorRotate(t *testing.T) {
-	c := NewCollector(5)
+	c := NewCollector(CollectorOptions{TopN: 5})
 
 	msg1, dnsMsg1 := makeMessage("example.com.", dns.TypeA, 0, "10.0.0.1", false)
 	c.Record(msg1, dnsMsg1)
@@ -147,7 +147,7 @@ func TestCollectorRotate(t *testing.T) {
 }
 
 func TestCollectorNilDNSMsg(t *testing.T) {
-	c := NewCollector(5)
+	c := NewCollector(CollectorOptions{TopN: 5})
 
 	mt := dnstap.Message_CLIENT_QUERY
 	msg := &dnstap.Message{
@@ -165,6 +165,51 @@ func TestCollectorNilDNSMsg(t *testing.T) {
 	}
 	if len(snap.ClientIPs) != 1 {
 		t.Fatalf("expected 1 client IP, got %v", snap.ClientIPs)
+	}
+}
+
+func TestCollectorDomainLabels(t *testing.T) {
+	c := NewCollector(CollectorOptions{TopN: 5, DomainLabels: 2})
+
+	for _, qname := range []string{"www.example.com.", "mail.example.com.", "api.example.com."} {
+		msg, dnsMsg := makeMessage(qname, dns.TypeA, 0, "10.0.0.1", false)
+		c.Record(msg, dnsMsg)
+	}
+	msg, dnsMsg := makeMessage("other.net.", dns.TypeA, 0, "10.0.0.2", false)
+	c.Record(msg, dnsMsg)
+
+	snap := c.AllTimeSnapshot()
+	// All three example.com subdomains should be aggregated into "example.com."
+	found := false
+	for _, e := range snap.TopDomains {
+		if e.Key == "example.com." && e.Count == 3 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected example.com. with count 3, got %v", snap.TopDomains)
+	}
+}
+
+func TestCollectorSubnetPrefix(t *testing.T) {
+	c := NewCollector(CollectorOptions{TopN: 5, SubnetPrefix: 24})
+
+	for _, ip := range []string{"10.0.0.1", "10.0.0.2", "10.0.0.3"} {
+		msg, dnsMsg := makeMessage("example.com.", dns.TypeA, 0, ip, false)
+		c.Record(msg, dnsMsg)
+	}
+	msg, dnsMsg := makeMessage("example.com.", dns.TypeA, 0, "192.168.1.5", false)
+	c.Record(msg, dnsMsg)
+
+	snap := c.AllTimeSnapshot()
+	found := false
+	for _, e := range snap.ClientIPs {
+		if e.Key == "10.0.0.0/24" && e.Count == 3 {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected 10.0.0.0/24 with count 3, got %v", snap.ClientIPs)
 	}
 }
 
@@ -222,8 +267,6 @@ func TestRenderXML(t *testing.T) {
 	if !strings.Contains(output, `name="rcode"`) {
 		t.Fatal("missing rcode array")
 	}
-
-	// Verify XML is well-formed by checking for closing tag.
 	if !strings.Contains(output, `</dnstap-filter-stats>`) {
 		t.Fatal("missing closing root element")
 	}
@@ -248,6 +291,37 @@ func TestRenderHTML(t *testing.T) {
 	output := buf.String()
 	if !strings.Contains(output, "<!DOCTYPE html>") {
 		t.Fatal("missing DOCTYPE")
+	}
+	if !strings.Contains(output, "example.com.") {
+		t.Fatal("missing domain in output")
+	}
+	if !strings.Contains(output, "10.0.0.1") {
+		t.Fatal("missing client IP in output")
+	}
+	if !strings.Contains(output, "chart.js") {
+		t.Fatal("missing Chart.js reference")
+	}
+}
+
+func TestRenderMarkdown(t *testing.T) {
+	snap := &Snapshot{
+		Start:       time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC),
+		End:         time.Date(2024, 1, 1, 0, 1, 0, 0, time.UTC),
+		TotalFrames: 100,
+		TopDomains:  []RankedEntry{{Key: "example.com.", Count: 50}},
+		QtypeDist:   []RankedEntry{{Key: "A", Count: 80}},
+		RcodeDist:   []RankedEntry{{Key: "NOERROR", Count: 90}},
+		ClientIPs:   []RankedEntry{{Key: "10.0.0.1", Count: 100}},
+	}
+
+	var buf bytes.Buffer
+	if err := RenderMarkdown(&buf, []*Snapshot{snap}, snap); err != nil {
+		t.Fatal(err)
+	}
+
+	output := buf.String()
+	if !strings.Contains(output, "# dnstap-filter Statistics Report") {
+		t.Fatal("missing heading")
 	}
 	if !strings.Contains(output, "example.com.") {
 		t.Fatal("missing domain in output")

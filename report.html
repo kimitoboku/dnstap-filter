@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>dnstap-filter Statistics</title>
+<style>
+  body { font-family: sans-serif; margin: 2em; background: #fafafa; color: #333; }
+  h1 { color: #1a1a2e; }
+  h2 { color: #16213e; margin-top: 2em; border-bottom: 2px solid #e2e2e2; padding-bottom: 0.3em; }
+  h3 { color: #0f3460; }
+  table { border-collapse: collapse; margin: 1em 0; min-width: 300px; }
+  th, td { border: 1px solid #ddd; padding: 6px 12px; text-align: left; }
+  th { background: #e8e8e8; }
+  tr:nth-child(even) { background: #f5f5f5; }
+  .summary { font-size: 1.1em; margin: 0.5em 0; }
+  .window { margin-bottom: 2em; padding: 1em; background: #fff; border: 1px solid #e0e0e0; border-radius: 4px; }
+</style>
+</head>
+<body>
+<h1>dnstap-filter Statistics Report</h1>
+
+
+<h2>All Time Summary</h2>
+<p class="summary">Total frames: 260</p>
+<p class="summary">Period: 2026-03-30 21:42:13 &mdash; 2026-03-30 21:43:05</p>
+
+
+
+<h4>Top Queried Domains</h4>
+<table>
+<tr><th>#</th><th>Domain</th><th>Count</th></tr>
+<tr><td>1</td><td>s.yimg.jp.</td><td>12</td></tr>
+<tr><td>2</td><td>accounts.google.com.</td><td>6</td></tr>
+<tr><td>3</td><td>auth.wikimedia.org.</td><td>6</td></tr>
+<tr><td>4</td><td>browser-intake-us5-datadoghq.com.</td><td>6</td></tr>
+<tr><td>5</td><td>caps.x.com.</td><td>6</td></tr>
+<tr><td>6</td><td>cdn.cxense.com.</td><td>6</td></tr>
+<tr><td>7</td><td>cdn.givefreely.com.</td><td>6</td></tr>
+<tr><td>8</td><td>clientstream.launchdarkly.com.</td><td>6</td></tr>
+<tr><td>9</td><td>connect.facebook.net.</td><td>6</td></tr>
+<tr><td>10</td><td>cx.api.itmedia.co.jp.</td><td>6</td></tr>
+<tr><td>11</td><td>dsb.yahoo.co.jp.</td><td>6</td></tr>
+<tr><td>12</td><td>dualstack.beacon.itmedia.jp.</td><td>6</td></tr>
+<tr><td>13</td><td>eetimes.itmedia.co.jp.</td><td>6</td></tr>
+<tr><td>14</td><td>external-datahub-search.yahooapis.jp.</td><td>6</td></tr>
+<tr><td>15</td><td>fonts.gstatic.com.</td><td>6</td></tr>
+<tr><td>16</td><td>gemini.google.com.</td><td>6</td></tr>
+<tr><td>17</td><td>github.com.</td><td>6</td></tr>
+<tr><td>18</td><td>image.itmedia.co.jp.</td><td>6</td></tr>
+<tr><td>19</td><td>ja.wikipedia.org.</td><td>6</td></tr>
+<tr><td>20</td><td>mempf.yahoo.co.jp.</td><td>6</td></tr>
+
+</table>
+
+
+
+<h4>Query Type Distribution</h4>
+<table>
+<tr><th>Type</th><th>Count</th></tr>
+<tr><td>A</td><td>90</td></tr>
+<tr><td>AAAA</td><td>86</td></tr>
+<tr><td>HTTPS</td><td>84</td></tr>
+
+</table>
+
+
+
+<h4>Response Code Distribution</h4>
+<table>
+<tr><th>Rcode</th><th>Count</th></tr>
+<tr><td>NOERROR</td><td>130</td></tr>
+
+</table>
+
+
+
+<h4>Top Client IPs</h4>
+<table>
+<tr><th>#</th><th>Client IP</th><th>Count</th></tr>
+<tr><td>1</td><td>240b:250:8d40:a900:7572:f23c:45bd:652a</td><td>260</td></tr>
+
+</table>
+
+
+
+
+
+<h2>Time Windows</h2>
+
+<div class="window">
+<h3>Window 1: 2026-03-30 21:42:13 &mdash; 2026-03-30 21:43:05 (260 frames)</h3>
+
+
+<h4>Top Queried Domains</h4>
+<table>
+<tr><th>#</th><th>Domain</th><th>Count</th></tr>
+<tr><td>1</td><td>s.yimg.jp.</td><td>12</td></tr>
+<tr><td>2</td><td>accounts.google.com.</td><td>6</td></tr>
+<tr><td>3</td><td>auth.wikimedia.org.</td><td>6</td></tr>
+<tr><td>4</td><td>browser-intake-us5-datadoghq.com.</td><td>6</td></tr>
+<tr><td>5</td><td>caps.x.com.</td><td>6</td></tr>
+<tr><td>6</td><td>cdn.cxense.com.</td><td>6</td></tr>
+<tr><td>7</td><td>cdn.givefreely.com.</td><td>6</td></tr>
+<tr><td>8</td><td>clientstream.launchdarkly.com.</td><td>6</td></tr>
+<tr><td>9</td><td>connect.facebook.net.</td><td>6</td></tr>
+<tr><td>10</td><td>cx.api.itmedia.co.jp.</td><td>6</td></tr>
+<tr><td>11</td><td>dsb.yahoo.co.jp.</td><td>6</td></tr>
+<tr><td>12</td><td>dualstack.beacon.itmedia.jp.</td><td>6</td></tr>
+<tr><td>13</td><td>eetimes.itmedia.co.jp.</td><td>6</td></tr>
+<tr><td>14</td><td>external-datahub-search.yahooapis.jp.</td><td>6</td></tr>
+<tr><td>15</td><td>fonts.gstatic.com.</td><td>6</td></tr>
+<tr><td>16</td><td>gemini.google.com.</td><td>6</td></tr>
+<tr><td>17</td><td>github.com.</td><td>6</td></tr>
+<tr><td>18</td><td>image.itmedia.co.jp.</td><td>6</td></tr>
+<tr><td>19</td><td>ja.wikipedia.org.</td><td>6</td></tr>
+<tr><td>20</td><td>mempf.yahoo.co.jp.</td><td>6</td></tr>
+
+</table>
+
+
+
+<h4>Query Type Distribution</h4>
+<table>
+<tr><th>Type</th><th>Count</th></tr>
+<tr><td>A</td><td>90</td></tr>
+<tr><td>AAAA</td><td>86</td></tr>
+<tr><td>HTTPS</td><td>84</td></tr>
+
+</table>
+
+
+
+<h4>Response Code Distribution</h4>
+<table>
+<tr><th>Rcode</th><th>Count</th></tr>
+<tr><td>NOERROR</td><td>130</td></tr>
+
+</table>
+
+
+
+<h4>Top Client IPs</h4>
+<table>
+<tr><th>#</th><th>Client IP</th><th>Count</th></tr>
+<tr><td>1</td><td>240b:250:8d40:a900:7572:f23c:45bd:652a</td><td>260</td></tr>
+
+</table>
+
+
+</div>
+
+
+
+</body>
+</html>
+
