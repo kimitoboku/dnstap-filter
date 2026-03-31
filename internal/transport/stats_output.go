@@ -23,27 +23,33 @@ const (
 // and writes the final report on Close. The actual statistics recording
 // is done upstream in the filter goroutine via collector.Record().
 type StatsOutput struct {
-	collector *stats.Collector
-	path      string
-	format    statsFormat
-	ch        chan []byte
-	done      chan struct{}
+	collector      *stats.Collector
+	path           string
+	format         statsFormat
+	windowInterval time.Duration
+	ch             chan []byte
+	done           chan struct{}
 }
 
 // NewStatsOutput creates a new StatsOutput. The address is the output path;
-// the format is determined by file extension (.html, .xml, .json).
-// Use "-" for stdout (JSON format).
-func NewStatsOutput(collector *stats.Collector, address string) (*StatsOutput, error) {
+// the format is determined by file extension (.html, .xml, .json, .md).
+// Use "-" for stdout (JSON format). windowInterval sets the rotation interval;
+// 0 uses the default of 60 seconds.
+func NewStatsOutput(collector *stats.Collector, address string, windowInterval time.Duration) (*StatsOutput, error) {
 	format, err := parseStatsFormat(address)
 	if err != nil {
 		return nil, err
 	}
+	if windowInterval <= 0 {
+		windowInterval = 60 * time.Second
+	}
 	return &StatsOutput{
-		collector: collector,
-		path:      address,
-		format:    format,
-		ch:        make(chan []byte, 32),
-		done:      make(chan struct{}),
+		collector:      collector,
+		path:           address,
+		format:         format,
+		windowInterval: windowInterval,
+		ch:             make(chan []byte, 32),
+		done:           make(chan struct{}),
 	}, nil
 }
 
@@ -73,7 +79,7 @@ func (s *StatsOutput) GetOutputChannel() chan []byte {
 func (s *StatsOutput) RunOutputLoop() {
 	defer close(s.done)
 
-	ticker := time.NewTicker(60 * time.Second)
+	ticker := time.NewTicker(s.windowInterval)
 	defer ticker.Stop()
 
 	for {

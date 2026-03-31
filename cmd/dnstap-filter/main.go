@@ -37,6 +37,7 @@ type cliConfig struct {
 	statsTopN         int
 	statsDomainLabels int
 	statsSubnetPrefix int
+	statsWindow       time.Duration
 }
 
 func parseCLIArgs(args []string) (cliConfig, error) {
@@ -98,6 +99,8 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 		"\texample: --stats-domain-labels=2 maps www.example.com. -> example.com.")
 	statsSubnetPrefix := fs.Int("stats-subnet-prefix", 0, "mask client IPs to prefix length for subnet aggregation (0 = no masking)\n"+
 		"\texample: --stats-subnet-prefix=24 groups IPs into /24 subnets")
+	statsWindow := fs.Duration("stats-window", 60*time.Second, "time window interval for stats aggregation (default 60s)\n"+
+		"\texample: --stats-window=30s  --stats-window=5m")
 
 	if err := fs.Parse(args); err != nil {
 		return cliConfig{}, err
@@ -125,6 +128,7 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 		statsTopN:         *statsTopN,
 		statsDomainLabels: *statsDomainLabels,
 		statsSubnetPrefix: *statsSubnetPrefix,
+		statsWindow:       *statsWindow,
 	}, nil
 }
 
@@ -212,7 +216,7 @@ func run(args []string) error {
 			if err != nil {
 				return fmt.Errorf("output: %w", err)
 			}
-			so, err := transport.NewStatsOutput(collector, addr)
+			so, err := transport.NewStatsOutput(collector, addr, cfg.statsWindow)
 			if err != nil {
 				return fmt.Errorf("output: %w", err)
 			}

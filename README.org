@@ -194,6 +194,7 @@ Three optional flags control how statistics are aggregated:
 - ~--stats-top-n=N~ — number of top entries to keep in domain and client IP rankings (default: 20)
 - ~--stats-domain-labels=N~ — aggregate query names by the last N DNS labels; e.g. N=2 maps ~www.example.com.~ → ~example.com.~ (default: 0 = full qname)
 - ~--stats-subnet-prefix=N~ — mask client IPs to a prefix length before counting; e.g. N=24 groups all IPs in the same /24 (default: 0 = no masking)
+- ~--stats-window=D~ — time window interval for aggregation (default: ~60s~); accepts Go duration syntax: ~30s~, ~5m~, ~1h~
 
 #+begin_src sh
 # Generate an HTML statistics report (with time-series charts)
@@ -251,6 +252,7 @@ Optional:
 - ~--stats-top-n~: top-N entry limit for domain and client IP rankings in ~stats:~ output (default: 20)
 - ~--stats-domain-labels~: aggregate query names by last N DNS labels in ~stats:~ output (default: 0 = full qname)
 - ~--stats-subnet-prefix~: mask client IPs to prefix length in ~stats:~ output (default: 0 = no masking)
+- ~--stats-window~: time window interval for stats aggregation (default: ~60s~; accepts Go duration syntax: ~30s~, ~5m~, ~1h~)
 
 ** Filter expression
 
