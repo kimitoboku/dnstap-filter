@@ -102,3 +102,51 @@ func TestParseURI_UnknownScheme(t *testing.T) {
 		t.Fatalf("expected error for unknown scheme")
 	}
 }
+
+func TestIsStatsSpec(t *testing.T) {
+	cases := []struct {
+		spec string
+		want bool
+	}{
+		{"stats:report.html", true},
+		{"stats:-", true},
+		{"stats:report.json", true},
+		{"stdout:time", false},
+		{"file:out.dnstap", false},
+		{"ftp:bad", false},
+	}
+	for _, tt := range cases {
+		got := IsStatsSpec(tt.spec)
+		if got != tt.want {
+			t.Errorf("IsStatsSpec(%q) = %v, want %v", tt.spec, got, tt.want)
+		}
+	}
+}
+
+func TestStatsAddress(t *testing.T) {
+	addr, err := StatsAddress("stats:report.json")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if addr != "report.json" {
+		t.Errorf("expected 'report.json', got %q", addr)
+	}
+
+	addr, err = StatsAddress("stats:-")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if addr != "-" {
+		t.Errorf("expected '-', got %q", addr)
+	}
+
+	_, err = StatsAddress("stdout:time")
+	if err == nil {
+		t.Fatal("expected error for non-stats spec")
+	}
+
+	_, err = StatsAddress("ftp:bad")
+	if err == nil {
+		t.Fatal("expected error for unknown scheme")
+	}
+}
