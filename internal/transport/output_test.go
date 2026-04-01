@@ -2,12 +2,16 @@ package transport
 
 import (
 	"net"
+	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/dnstap/golang-dnstap"
 	"github.com/miekg/dns"
 	"google.golang.org/protobuf/proto"
+
+	"github.com/kimitoboku/dnstap-filter/internal/stats"
 )
 
 // buildTestDnstap constructs a dnstap message for testing.
@@ -397,5 +401,85 @@ func TestNewStdoutFormatFunc_ResponseTime(t *testing.T) {
 	line := string(out)
 	if !strings.Contains(line, "2024") {
 		t.Errorf("expected timestamp from ResponseTimeSec, got: %s", line)
+	}
+}
+
+func TestMultiOutput_RunOutputLoopAndClose(t *testing.T) {
+	dir := t.TempDir()
+	c1 := stats.NewCollector(stats.CollectorOptions{TopN: 1})
+	so1, err := NewStatsOutput(c1, filepath.Join(dir, "a.json"), 60*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	c2 := stats.NewCollector(stats.CollectorOptions{TopN: 1})
+	so2, err := NewStatsOutput(c2, filepath.Join(dir, "b.json"), 60*time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	mo := NewMultiOutput([]dnstap.Output{so1, so2})
+	go mo.RunOutputLoop()
+	mo.GetOutputChannel() <- []byte("frame")
+	mo.Close()
+}
+
+func TestParseOutput_YAML(t *testing.T) {
+	out, err := ParseOutput("yaml:-")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out == nil {
+		t.Fatal("expected non-nil output")
+	}
+}
+
+func TestParseOutput_JSONLStdout(t *testing.T) {
+	out, err := ParseOutput("jsonl:-")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out == nil {
+		t.Fatal("expected non-nil output")
+	}
+}
+
+func TestParseOutput_DNS(t *testing.T) {
+	out, err := ParseOutput("dns:8.8.8.8:53")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out == nil {
+		t.Fatal("expected non-nil output")
+	}
+}
+
+func TestParseOutput_File(t *testing.T) {
+	dir := t.TempDir()
+	out, err := ParseOutput("file:" + filepath.Join(dir, "out.dnstap"))
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out == nil {
+		t.Fatal("expected non-nil output")
+	}
+}
+
+func TestParseOutput_TCP(t *testing.T) {
+	out, err := ParseOutput("tcp:127.0.0.1:6001")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out == nil {
+		t.Fatal("expected non-nil output")
+	}
+}
+
+func TestParseOutput_Unix(t *testing.T) {
+	out, err := ParseOutput("unix:/tmp/test_dnstap_out.sock")
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if out == nil {
+		t.Fatal("expected non-nil output")
 	}
 }

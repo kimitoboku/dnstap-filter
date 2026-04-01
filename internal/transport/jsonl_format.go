@@ -11,16 +11,16 @@ import (
 )
 
 type jsonlOutput struct {
-	Type            string      `json:"type"`
-	MessageType     string      `json:"message_type"`
-	Timestamp       string      `json:"timestamp"`
-	SocketFamily    string      `json:"socket_family,omitempty"`
-	SocketProtocol  string      `json:"socket_protocol,omitempty"`
-	QueryAddress    string      `json:"query_address,omitempty"`
-	QueryPort       uint32      `json:"query_port,omitempty"`
-	ResponseAddress string      `json:"response_address,omitempty"`
-	ResponsePort    uint32      `json:"response_port,omitempty"`
-	DNS             *jsonlDNS   `json:"dns,omitempty"`
+	Type            string    `json:"type"`
+	MessageType     string    `json:"message_type"`
+	Timestamp       string    `json:"timestamp"`
+	SocketFamily    string    `json:"socket_family,omitempty"`
+	SocketProtocol  string    `json:"socket_protocol,omitempty"`
+	QueryAddress    string    `json:"query_address,omitempty"`
+	QueryPort       uint32    `json:"query_port,omitempty"`
+	ResponseAddress string    `json:"response_address,omitempty"`
+	ResponsePort    uint32    `json:"response_port,omitempty"`
+	DNS             *jsonlDNS `json:"dns,omitempty"`
 }
 
 type jsonlDNS struct {

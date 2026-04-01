@@ -1,6 +1,31 @@
 package main
 
-import "testing"
+import (
+	"os"
+	"path/filepath"
+	"testing"
+	"time"
+
+	dnstap "github.com/dnstap/golang-dnstap"
+	"google.golang.org/protobuf/proto"
+
+	"github.com/kimitoboku/dnstap-filter/internal/expression"
+	"github.com/kimitoboku/dnstap-filter/internal/stats"
+)
+
+// emptyPcapFile creates a temp file with a minimal pcap global header
+// (magic number only) so that NewPcapInput's stat check passes.
+// ReadInto will fail to parse it and return gracefully.
+func emptyPcapFile(t *testing.T) string {
+	t.Helper()
+	dir := t.TempDir()
+	path := filepath.Join(dir, "test.pcap")
+	// pcap global header magic: 0xd4c3b2a1 (little-endian)
+	if err := os.WriteFile(path, []byte{0xd4, 0xc3, 0xb2, 0xa1}, 0644); err != nil {
+		t.Fatal(err)
+	}
+	return path
+}
 
 func TestParseCLIArgs_Success(t *testing.T) {
 	cfg, err := parseCLIArgs([]string{"--in", "in.dnstap", "--out", "out.dnstap", "--filter", "ip=1.1.1.1"})
@@ -144,4 +169,164 @@ func TestParseCLIArgs_MultipleOuts(t *testing.T) {
 			t.Fatalf("outputSpecs[%d]: expected %q, got %q", i, want, cfg.outputSpecs[i])
 		}
 	}
+}
+
+func TestRun_PrintFilterTree(t *testing.T) {
+	err := run([]string{"--print-filter-tree"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRun_InvalidFilter(t *testing.T) {
+	err := run([]string{"--in", "x", "--filter", "xyz=unknown"})
+	if err == nil {
+		t.Fatal("expected error for invalid filter expression")
+	}
+}
+
+func TestRun_BadInputScheme(t *testing.T) {
+	err := run([]string{"--in", "ftp:bad"})
+	if err == nil {
+		t.Fatal("expected error for bad input scheme")
+	}
+}
+
+func TestRun_BadOutputScheme(t *testing.T) {
+	pcap := emptyPcapFile(t)
+	err := run([]string{"--in", "pcap:" + pcap, "--out", "ftp:bad"})
+	if err == nil {
+		t.Fatal("expected error for bad output scheme")
+	}
+}
+
+func TestRun_BadStatsExt(t *testing.T) {
+	pcap := emptyPcapFile(t)
+	err := run([]string{"--in", "pcap:" + pcap, "--out", "stats:report.txt"})
+	if err == nil {
+		t.Fatal("expected error for unsupported stats extension")
+	}
+}
+
+func TestRun_PcapEOF(t *testing.T) {
+	// pcap input with unparseable file: ReadInto fails immediately, run returns nil.
+	pcap := emptyPcapFile(t)
+	err := run([]string{"--in", "pcap:" + pcap})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRun_MultipleOutputs(t *testing.T) {
+	// Two outputs → MultiOutput path in run().
+	pcap := emptyPcapFile(t)
+	err := run([]string{"--in", "pcap:" + pcap, "--out", "stats:-", "--out", "stdout:"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestRun_MultipleStatsOutputs(t *testing.T) {
+	// Two stats outputs: second reuses the same collector.
+	pcap := emptyPcapFile(t)
+	err := run([]string{"--in", "pcap:" + pcap, "--out", "stats:-", "--out", "stats:-"})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func buildTestFrame(t *testing.T) []byte {
+	t.Helper()
+	dtType := dnstap.Dnstap_MESSAGE
+	msgType := dnstap.Message_CLIENT_QUERY
+	sec := uint64(1704067200)
+	dt := &dnstap.Dnstap{
+		Type: &dtType,
+		Message: &dnstap.Message{
+			Type:         &msgType,
+			QueryTimeSec: &sec,
+		},
+	}
+	frame, err := proto.Marshal(dt)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return frame
+}
+
+func TestDnstapFilter_Basic(t *testing.T) {
+	outputCh := make(chan []byte, 10)
+	root, err := expression.ParseFilterExpression("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	inputCh, done := dnstapFilter(outputCh, root, 0, 0, nil)
+	inputCh <- buildTestFrame(t)
+
+	select {
+	case got := <-outputCh:
+		if len(got) == 0 {
+			t.Error("expected non-empty output frame")
+		}
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for output frame")
+	}
+
+	close(inputCh)
+	<-done
+}
+
+func TestDnstapFilter_CountLimit(t *testing.T) {
+	outputCh := make(chan []byte, 10)
+	root, _ := expression.ParseFilterExpression("")
+	inputCh, done := dnstapFilter(outputCh, root, 1, 0, nil)
+
+	frame := buildTestFrame(t)
+	inputCh <- frame
+	inputCh <- frame // should be discarded due to count limit
+
+	select {
+	case <-outputCh:
+	case <-time.After(time.Second):
+		t.Fatal("timeout waiting for first frame")
+	}
+
+	close(inputCh)
+	<-done
+
+	select {
+	case <-outputCh:
+		t.Error("expected no second frame with count limit 1")
+	default:
+	}
+}
+
+func TestDnstapFilter_WithCollector(t *testing.T) {
+	outputCh := make(chan []byte, 10)
+	root, _ := expression.ParseFilterExpression("")
+	collector := stats.NewCollector(stats.CollectorOptions{TopN: 5})
+	inputCh, done := dnstapFilter(outputCh, root, 0, 0, collector)
+
+	inputCh <- buildTestFrame(t)
+
+	select {
+	case <-outputCh:
+	case <-time.After(time.Second):
+		t.Fatal("timeout")
+	}
+
+	close(inputCh)
+	<-done
+}
+
+func TestDnstapFilter_InvalidFrame(t *testing.T) {
+	outputCh := make(chan []byte, 10)
+	root, _ := expression.ParseFilterExpression("")
+	inputCh, done := dnstapFilter(outputCh, root, 0, 0, nil)
+
+	inputCh <- []byte("not valid protobuf")
+
+	close(inputCh)
+	<-done
 }

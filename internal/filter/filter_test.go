@@ -529,9 +529,9 @@ func TestRegexpFilter(t *testing.T) {
 	}
 
 	tests := []struct {
-		name   string
-		qname  string
-		want   bool
+		name  string
+		qname string
+		want  bool
 	}{
 		{"match", "www.example.com.", true},
 		{"no match", "mail.example.com.", false},
@@ -698,7 +698,7 @@ func TestRdataFilter_AAAA(t *testing.T) {
 
 func TestFormatTree(t *testing.T) {
 	tree := &AndNode{
-		Left:  &PredicateNode{Key: "ip", Value: "1.1.1.1"},
+		Left: &PredicateNode{Key: "ip", Value: "1.1.1.1"},
 		Right: &OrNode{
 			Left:  &PredicateNode{Key: "fqdn", Value: "example.com."},
 			Right: &NotNode{Child: &PredicateNode{Key: "suffix", Value: "test."}},
