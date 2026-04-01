@@ -15,6 +15,10 @@ import (
 )
 
 func makeMessage(qname string, qtype uint16, rcode int, clientIP string, isResponse bool) (*dnstap.Message, *dns.Msg) {
+	return makeMessageAt(qname, qtype, rcode, clientIP, isResponse, time.Time{})
+}
+
+func makeMessageAt(qname string, qtype uint16, rcode int, clientIP string, isResponse bool, ts time.Time) (*dnstap.Message, *dns.Msg) {
 	dnsMsg := &dns.Msg{
 		Question: []dns.Question{{Name: qname, Qtype: qtype, Qclass: dns.ClassINET}},
 	}
@@ -46,6 +50,13 @@ func makeMessage(qname string, qtype uint16, rcode int, clientIP string, isRespo
 		msg.ResponseMessage = packed
 	} else {
 		msg.QueryMessage = packed
+	}
+
+	if !ts.IsZero() {
+		sec := uint64(ts.Unix())
+		nsec := uint32(ts.Nanosecond())
+		msg.QueryTimeSec = &sec
+		msg.QueryTimeNsec = &nsec
 	}
 
 	return msg, dnsMsg
@@ -345,6 +356,176 @@ func TestMakeMessageProtobuf(t *testing.T) {
 	}
 	if len(data) == 0 {
 		t.Fatal("empty protobuf data")
+	}
+}
+
+func TestCollectorTimestampWindowRotation(t *testing.T) {
+	// Use 60s windows. Send messages spanning 3 windows.
+	window := 60 * time.Second
+	c := NewCollector(CollectorOptions{TopN: 5, WindowDuration: window})
+
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Window 1: t=0s, 30s
+	msg1, d1 := makeMessageAt("a.com.", dns.TypeA, 0, "10.0.0.1", false, base)
+	msg2, d2 := makeMessageAt("b.com.", dns.TypeA, 0, "10.0.0.1", false, base.Add(30*time.Second))
+	// Window 2: t=61s, 90s
+	msg3, d3 := makeMessageAt("c.com.", dns.TypeA, 0, "10.0.0.1", false, base.Add(61*time.Second))
+	msg4, d4 := makeMessageAt("d.com.", dns.TypeA, 0, "10.0.0.1", false, base.Add(90*time.Second))
+	// Window 3: t=121s
+	msg5, d5 := makeMessageAt("e.com.", dns.TypeA, 0, "10.0.0.1", false, base.Add(121*time.Second))
+
+	for _, pair := range [][2]interface{}{{msg1, d1}, {msg2, d2}, {msg3, d3}, {msg4, d4}, {msg5, d5}} {
+		c.Record(pair[0].(*dnstap.Message), pair[1].(*dns.Msg))
+	}
+
+	// After recording all messages, windows 1 and 2 should have been auto-rotated.
+	history := c.History()
+	if len(history) != 2 {
+		t.Fatalf("expected 2 completed windows, got %d", len(history))
+	}
+	if history[0].TotalFrames != 2 {
+		t.Errorf("window 1: expected 2 frames, got %d", history[0].TotalFrames)
+	}
+	if history[1].TotalFrames != 2 {
+		t.Errorf("window 2: expected 2 frames, got %d", history[1].TotalFrames)
+	}
+
+	// Window boundaries should reflect message timestamps.
+	if !history[0].Start.Equal(base) {
+		t.Errorf("window 1 start: expected %v, got %v", base, history[0].Start)
+	}
+	if !history[0].End.Equal(base.Add(window)) {
+		t.Errorf("window 1 end: expected %v, got %v", base.Add(window), history[0].End)
+	}
+	if !history[1].Start.Equal(base.Add(window)) {
+		t.Errorf("window 2 start: expected %v, got %v", base.Add(window), history[1].Start)
+	}
+
+	// All-time snapshot should have all 5 frames.
+	allTime := c.AllTimeSnapshot()
+	if allTime.TotalFrames != 5 {
+		t.Errorf("all-time: expected 5 frames, got %d", allTime.TotalFrames)
+	}
+}
+
+func TestCollectorTimestampWindowBoundaryExact(t *testing.T) {
+	// A message exactly at the window boundary belongs to the next window.
+	window := 60 * time.Second
+	c := NewCollector(CollectorOptions{TopN: 5, WindowDuration: window})
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	msg1, d1 := makeMessageAt("a.com.", dns.TypeA, 0, "10.0.0.1", false, base)
+	msg2, d2 := makeMessageAt("b.com.", dns.TypeA, 0, "10.0.0.1", false, base.Add(60*time.Second))
+	c.Record(msg1, d1)
+	c.Record(msg2, d2)
+
+	history := c.History()
+	if len(history) != 1 {
+		t.Fatalf("expected 1 completed window, got %d", len(history))
+	}
+	if history[0].TotalFrames != 1 {
+		t.Errorf("expected 1 frame in window 1, got %d", history[0].TotalFrames)
+	}
+}
+
+func TestCollectorNoTimestamp(t *testing.T) {
+	// Messages without timestamps fall back to wall clock; no auto-rotation.
+	c := NewCollector(CollectorOptions{TopN: 5, WindowDuration: 60 * time.Second})
+
+	mt := dnstap.Message_CLIENT_QUERY
+	msg := &dnstap.Message{Type: &mt}
+	c.Record(msg, nil)
+	c.Record(msg, nil)
+
+	if len(c.History()) != 0 {
+		t.Error("expected no auto-rotation for messages without timestamps")
+	}
+	snap := c.AllTimeSnapshot()
+	if snap.TotalFrames != 2 {
+		t.Errorf("expected 2 frames, got %d", snap.TotalFrames)
+	}
+}
+
+func TestCollectorLastTimestampUsedForRotate(t *testing.T) {
+	// Rotate() should use the last message timestamp, not wall clock.
+	window := 60 * time.Second
+	c := NewCollector(CollectorOptions{TopN: 5, WindowDuration: window})
+	ts := time.Date(2024, 6, 1, 12, 0, 30, 0, time.UTC)
+	msg, d := makeMessageAt("x.com.", dns.TypeA, 0, "10.0.0.1", false, ts)
+	c.Record(msg, d)
+
+	snap := c.Rotate()
+	// Snapshot end should equal the last message time.
+	if !snap.End.Equal(ts) {
+		t.Errorf("Rotate end: expected %v, got %v", ts, snap.End)
+	}
+}
+
+func TestCollectorAllTimeSnapshotEmpty(t *testing.T) {
+	// AllTimeSnapshot on a collector that has never received a message.
+	c := NewCollector(CollectorOptions{TopN: 5})
+	snap := c.AllTimeSnapshot()
+	if snap == nil {
+		t.Fatal("expected non-nil snapshot")
+	}
+	if snap.TotalFrames != 0 {
+		t.Errorf("expected 0 frames, got %d", snap.TotalFrames)
+	}
+}
+
+func TestCollectorRotateEmpty(t *testing.T) {
+	// Rotate on a collector that has never received a message.
+	c := NewCollector(CollectorOptions{TopN: 5})
+	snap := c.Rotate()
+	if snap == nil {
+		t.Fatal("expected non-nil snapshot")
+	}
+	if snap.TotalFrames != 0 {
+		t.Errorf("expected 0 frames, got %d", snap.TotalFrames)
+	}
+}
+
+func TestMessageTimeWithNsec(t *testing.T) {
+	// Verify that QueryTimeNsec is included in messageTime.
+	sec := uint64(1704067200)
+	nsec := uint32(500_000_000) // 0.5s
+	mt := dnstap.Message_CLIENT_QUERY
+	msg := &dnstap.Message{
+		Type:          &mt,
+		QueryTimeSec:  &sec,
+		QueryTimeNsec: &nsec,
+	}
+	got := messageTime(msg)
+	want := time.Unix(int64(sec), int64(nsec)).UTC()
+	if !got.Equal(want) {
+		t.Errorf("messageTime: got %v, want %v", got, want)
+	}
+}
+
+func TestMessageTimeResponseNsec(t *testing.T) {
+	// Verify ResponseTimeSec/Nsec path.
+	sec := uint64(1704067200)
+	nsec := uint32(100_000_000)
+	mt := dnstap.Message_CLIENT_RESPONSE
+	msg := &dnstap.Message{
+		Type:             &mt,
+		ResponseTimeSec:  &sec,
+		ResponseTimeNsec: &nsec,
+	}
+	got := messageTime(msg)
+	want := time.Unix(int64(sec), int64(nsec)).UTC()
+	if !got.Equal(want) {
+		t.Errorf("messageTime: got %v, want %v", got, want)
+	}
+}
+
+func TestMessageTimeNoFields(t *testing.T) {
+	mt := dnstap.Message_CLIENT_QUERY
+	msg := &dnstap.Message{Type: &mt}
+	got := messageTime(msg)
+	if !got.IsZero() {
+		t.Errorf("expected zero time, got %v", got)
 	}
 }
 

@@ -46,17 +46,26 @@ type CollectorOptions struct {
 	// groups all IPs in the same /24 together (e.g. "192.0.2.0/24").
 	// 0 means no masking (use the full address).
 	SubnetPrefix int
+
+	// WindowDuration is the size of each time window for automatic rotation
+	// based on message timestamps. When > 0, Record() rotates the current
+	// window whenever a message's timestamp crosses a window boundary. This
+	// ensures that windows in the output report reflect DNS traffic time
+	// rather than wall-clock processing time, which is important when
+	// replaying dnstap or pcap files. 0 disables automatic rotation.
+	WindowDuration time.Duration
 }
 
 // Collector accumulates DNS statistics from dnstap messages.
 // It is safe for concurrent use from a single writer goroutine
 // plus multiple reader goroutines.
 type Collector struct {
-	mu      sync.Mutex
-	opts    CollectorOptions
-	current *window
-	history []*Snapshot
-	allTime *window
+	mu       sync.Mutex
+	opts     CollectorOptions
+	current  *window
+	history  []*Snapshot
+	allTime  *window
+	lastTime time.Time // timestamp of the last recorded message (zero = not yet seen)
 }
 
 // NewCollector creates a new Collector with the given options.
@@ -64,12 +73,30 @@ func NewCollector(opts CollectorOptions) *Collector {
 	if opts.TopN <= 0 {
 		opts.TopN = 20
 	}
-	now := time.Now()
 	return &Collector{
-		opts:    opts,
-		current: newWindow(now),
-		allTime: newWindow(now),
+		opts: opts,
 	}
+}
+
+// messageTime extracts the timestamp from a dnstap message.
+// It prefers the query timestamp; falls back to response timestamp.
+// Returns the zero value if neither is set.
+func messageTime(msg *dnstap.Message) time.Time {
+	if msg.QueryTimeSec != nil {
+		t := time.Unix(int64(*msg.QueryTimeSec), 0).UTC()
+		if msg.QueryTimeNsec != nil {
+			t = t.Add(time.Duration(*msg.QueryTimeNsec))
+		}
+		return t
+	}
+	if msg.ResponseTimeSec != nil {
+		t := time.Unix(int64(*msg.ResponseTimeSec), 0).UTC()
+		if msg.ResponseTimeNsec != nil {
+			t = t.Add(time.Duration(*msg.ResponseTimeNsec))
+		}
+		return t
+	}
+	return time.Time{}
 }
 
 // Record records a single dnstap message into the current window and
@@ -77,9 +104,45 @@ func NewCollector(opts CollectorOptions) *Collector {
 // unpacked DNS message from EvalContext to avoid redundant unpacking.
 // If dnsMsg is nil, the message is still counted but DNS-level fields
 // (qname, qtype, rcode) are not recorded.
+//
+// When CollectorOptions.WindowDuration > 0, Record automatically rotates
+// the current window whenever the message timestamp crosses a window
+// boundary, so that time windows reflect DNS traffic time rather than
+// wall-clock time.
 func (c *Collector) Record(msg *dnstap.Message, dnsMsg *dns.Msg) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	t := messageTime(msg)
+	if !t.IsZero() {
+		// Initialise windows lazily on the first message with a timestamp.
+		if c.current == nil {
+			start := t.Truncate(c.opts.WindowDuration)
+			if c.opts.WindowDuration <= 0 {
+				start = t
+			}
+			c.current = newWindow(start)
+			c.allTime = newWindow(start)
+		}
+		c.lastTime = t
+
+		// Auto-rotate when WindowDuration is set and the message has moved
+		// past the current window boundary.
+		if c.opts.WindowDuration > 0 {
+			windowEnd := c.current.start.Add(c.opts.WindowDuration)
+			for !t.Before(windowEnd) {
+				snap := c.current.snapshot(windowEnd, c.opts.TopN)
+				c.history = append(c.history, snap)
+				c.current = newWindow(windowEnd)
+				windowEnd = c.current.start.Add(c.opts.WindowDuration)
+			}
+		}
+	} else if c.current == nil {
+		// No timestamp at all: fall back to wall clock.
+		now := time.Now()
+		c.current = newWindow(now)
+		c.allTime = newWindow(now)
+	}
 
 	c.current.totalFrames++
 	c.allTime.totalFrames++
@@ -144,14 +207,21 @@ func (c *Collector) normalizeIP(rawIP []byte) string {
 
 // Rotate closes the current window, converts it to a Snapshot, appends
 // it to history, and opens a new window. Returns the completed snapshot.
+// It is called by StatsOutput on ticker ticks (wall-clock rotation) or at
+// close time. When message timestamps are available, the window end time
+// is taken from the last recorded message rather than the wall clock.
 func (c *Collector) Rotate() *Snapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	now := time.Now()
-	snap := c.current.snapshot(now, c.opts.TopN)
+	end := c.effectiveNow()
+	if c.current == nil {
+		c.current = newWindow(end)
+		c.allTime = newWindow(end)
+	}
+	snap := c.current.snapshot(end, c.opts.TopN)
 	c.history = append(c.history, snap)
-	c.current = newWindow(now)
+	c.current = newWindow(end)
 	return snap
 }
 
@@ -159,7 +229,20 @@ func (c *Collector) Rotate() *Snapshot {
 func (c *Collector) AllTimeSnapshot() *Snapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	return c.allTime.snapshot(time.Now(), c.opts.TopN)
+	if c.allTime == nil {
+		now := time.Now()
+		return newWindow(now).snapshot(now, c.opts.TopN)
+	}
+	return c.allTime.snapshot(c.effectiveNow(), c.opts.TopN)
+}
+
+// effectiveNow returns the last message timestamp if available, otherwise
+// the wall-clock time. Must be called with c.mu held.
+func (c *Collector) effectiveNow() time.Time {
+	if !c.lastTime.IsZero() {
+		return c.lastTime
+	}
+	return time.Now()
 }
 
 // History returns a copy of the completed window snapshots.

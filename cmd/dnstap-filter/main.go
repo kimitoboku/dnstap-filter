@@ -207,9 +207,10 @@ func run(args []string) error {
 		if transport.IsStatsSpec(spec) {
 			if collector == nil {
 				collector = stats.NewCollector(stats.CollectorOptions{
-					TopN:         cfg.statsTopN,
-					DomainLabels: cfg.statsDomainLabels,
-					SubnetPrefix: cfg.statsSubnetPrefix,
+					TopN:           cfg.statsTopN,
+					DomainLabels:   cfg.statsDomainLabels,
+					SubnetPrefix:   cfg.statsSubnetPrefix,
+					WindowDuration: cfg.statsWindow,
 				})
 			}
 			addr, err := transport.StatsAddress(spec)
