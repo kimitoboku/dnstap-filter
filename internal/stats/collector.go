@@ -245,6 +245,11 @@ func (c *Collector) effectiveNow() time.Time {
 	return time.Now()
 }
 
+// WindowDuration returns the configured window duration (0 if not set).
+func (c *Collector) WindowDuration() time.Duration {
+	return c.opts.WindowDuration
+}
+
 // History returns a copy of the completed window snapshots.
 func (c *Collector) History() []*Snapshot {
 	c.mu.Lock()

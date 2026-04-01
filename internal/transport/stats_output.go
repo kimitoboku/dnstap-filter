@@ -79,8 +79,20 @@ func (s *StatsOutput) GetOutputChannel() chan []byte {
 func (s *StatsOutput) RunOutputLoop() {
 	defer close(s.done)
 
-	ticker := time.NewTicker(s.windowInterval)
-	defer ticker.Stop()
+	// When the collector uses message-timestamp-driven rotation
+	// (WindowDuration > 0), Record() already rotates windows at the right
+	// boundaries. Using a wall-clock ticker in addition would produce extra
+	// spurious windows during live capture. Disable the ticker in that case
+	// and rely solely on the final Rotate() at close time.
+	//
+	// When WindowDuration == 0 (no timestamp-driven rotation), the ticker is
+	// the only mechanism that periodically snapshots the current window.
+	var tickC <-chan time.Time
+	if s.collector.WindowDuration() <= 0 {
+		ticker := time.NewTicker(s.windowInterval)
+		defer ticker.Stop()
+		tickC = ticker.C
+	}
 
 	for {
 		select {
@@ -92,7 +104,7 @@ func (s *StatsOutput) RunOutputLoop() {
 				return
 			}
 			// Frame received; discard it since recording happens upstream.
-		case <-ticker.C:
+		case <-tickC:
 			s.collector.Rotate()
 		}
 	}
