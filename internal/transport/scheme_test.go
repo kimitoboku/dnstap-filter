@@ -150,3 +150,26 @@ func TestStatsAddress(t *testing.T) {
 		t.Fatal("expected error for unknown scheme")
 	}
 }
+
+func TestIsListenAddr(t *testing.T) {
+	cases := []struct {
+		addr string
+		want bool
+	}{
+		{":9090", true},
+		{"localhost:9090", true},
+		{"0.0.0.0:9090", true},
+		{"127.0.0.1:8080", true},
+		{"report.html", false},
+		{"report.json", false},
+		{"-", false},
+		{"/tmp/stats.html", false},
+		{"::1:9090", false}, // ambiguous, SplitHostPort fails
+	}
+	for _, tt := range cases {
+		got := IsListenAddr(tt.addr)
+		if got != tt.want {
+			t.Errorf("IsListenAddr(%q) = %v, want %v", tt.addr, got, tt.want)
+		}
+	}
+}
