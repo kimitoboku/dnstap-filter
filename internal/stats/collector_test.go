@@ -529,5 +529,106 @@ func TestMessageTimeNoFields(t *testing.T) {
 	}
 }
 
+func TestCollectorMaxHistory(t *testing.T) {
+	// With MaxHistory=1:
+	//   - Window 1 rotated → history=[w1], len=1 ≤ 1, no trim yet.
+	//   - Window 2 rotated → history=[w1,w2], len=2 > 1, trim to [w2].
+	// AllTimeSnapshot should reflect only w2 + current, not w1.
+	winDur := 60 * time.Second
+	c := NewCollector(CollectorOptions{TopN: 5, WindowDuration: winDur, MaxHistory: 1})
+	base := time.Date(2024, 1, 1, 0, 0, 0, 0, time.UTC)
+
+	// Window 1 (t=0..59s): 3 frames of "w1.com."
+	for k := 0; k < 3; k++ {
+		msg, d := makeMessageAt("w1.com.", dns.TypeA, 0, "10.0.0.1", false, base.Add(time.Duration(k)*10*time.Second))
+		c.Record(msg, d)
+	}
+	// Window 2 (t=60..119s): 2 frames of "w2.com." — triggers rotation of window 1.
+	for k := 0; k < 2; k++ {
+		msg, d := makeMessageAt("w2.com.", dns.TypeA, 0, "10.0.0.1", false, base.Add(60*time.Second+time.Duration(k)*10*time.Second))
+		c.Record(msg, d)
+	}
+	// Window 3 (t=120s): 1 frame — triggers rotation of window 2, evicts window 1.
+	msg, d := makeMessageAt("w3.com.", dns.TypeA, 0, "10.0.0.1", false, base.Add(120*time.Second))
+	c.Record(msg, d)
+
+	// History should have exactly 1 entry (only window 2 retained).
+	history := c.History()
+	if len(history) != 1 {
+		t.Fatalf("expected 1 history entry with MaxHistory=1, got %d", len(history))
+	}
+
+	// AllTimeSnapshot must NOT include evicted window 1 (3 frames).
+	// Retained: window 2 (2 frames) + current window 3 (1 frame) = 3.
+	allTime := c.AllTimeSnapshot()
+	if allTime.TotalFrames != 3 {
+		t.Errorf("all-time after eviction: expected 3 frames (w2+current), got %d", allTime.TotalFrames)
+	}
+
+	// Evicted window 1 domain "w1.com." should not appear in all-time.
+	for _, e := range allTime.TopDomains {
+		if e.Key == "w1.com." {
+			t.Errorf("evicted domain w1.com. should not appear in AllTimeSnapshot, got %v", allTime.TopDomains)
+		}
+	}
+}
+
+func TestCollectorMaxHistoryRotate(t *testing.T) {
+	c := NewCollector(CollectorOptions{TopN: 5, MaxHistory: 1})
+	msg1, d1 := makeMessage("a.com.", dns.TypeA, 0, "10.0.0.1", false)
+	c.Record(msg1, d1)
+	c.Rotate()
+
+	msg2, d2 := makeMessage("b.com.", dns.TypeA, 0, "10.0.0.1", false)
+	c.Record(msg2, d2)
+	c.Rotate()
+
+	// After 2 rotations with MaxHistory=1, only the latest snapshot is kept.
+	if len(c.History()) != 1 {
+		t.Fatalf("expected 1 history entry, got %d", len(c.History()))
+	}
+}
+
+func TestAllTimeSnapshotAggregatesFromHistory(t *testing.T) {
+	// Verify that AllTimeSnapshot correctly aggregates across rotated windows.
+	c := NewCollector(CollectorOptions{TopN: 5})
+	msg1, d1 := makeMessage("a.com.", dns.TypeA, 0, "10.0.0.1", false)
+	c.Record(msg1, d1)
+	c.Rotate()
+
+	msg2, d2 := makeMessage("b.com.", dns.TypeAAAA, 0, "10.0.0.2", false)
+	c.Record(msg2, d2)
+	// Do NOT rotate — b.com. is in the current in-progress window.
+
+	allTime := c.AllTimeSnapshot()
+	if allTime.TotalFrames != 2 {
+		t.Fatalf("expected 2 total frames, got %d", allTime.TotalFrames)
+	}
+
+	// Both domains should appear.
+	domains := make(map[string]bool)
+	for _, e := range allTime.TopDomains {
+		domains[e.Key] = true
+	}
+	if !domains["a.com."] {
+		t.Error("a.com. should appear in AllTimeSnapshot (from history)")
+	}
+	if !domains["b.com."] {
+		t.Error("b.com. should appear in AllTimeSnapshot (from current window)")
+	}
+
+	// Both qtypes should appear.
+	qtypes := make(map[string]uint64)
+	for _, e := range allTime.QtypeDist {
+		qtypes[e.Key] = e.Count
+	}
+	if qtypes["A"] != 1 {
+		t.Errorf("expected A count=1, got %d", qtypes["A"])
+	}
+	if qtypes["AAAA"] != 1 {
+		t.Errorf("expected AAAA count=1, got %d", qtypes["AAAA"])
+	}
+}
+
 // suppress unused import warnings
 var _ = xml.Header

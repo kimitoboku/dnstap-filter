@@ -2,6 +2,8 @@ package transport
 
 import (
 	"fmt"
+	"net"
+	"strconv"
 	"strings"
 )
 
@@ -58,6 +60,24 @@ func StatsAddress(spec string) (string, error) {
 		return "", fmt.Errorf("not a stats spec: %q", spec)
 	}
 	return u.address, nil
+}
+
+// IsListenAddr returns true if address looks like a network listen address
+// (e.g. ":9090", "localhost:9090", "0.0.0.0:9090") rather than a file path.
+func IsListenAddr(address string) bool {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return false
+	}
+	// Port must be a valid number.
+	if _, err := strconv.Atoi(port); err != nil {
+		return false
+	}
+	// If host is empty (":9090") or a valid IP / hostname, it's a listen addr.
+	if host == "" || host == "localhost" || net.ParseIP(host) != nil {
+		return true
+	}
+	return false
 }
 
 // parseURI parses a transport spec of the form "scheme:address".

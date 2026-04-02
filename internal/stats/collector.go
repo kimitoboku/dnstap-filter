@@ -54,17 +54,26 @@ type CollectorOptions struct {
 	// rather than wall-clock processing time, which is important when
 	// replaying dnstap or pcap files. 0 disables automatic rotation.
 	WindowDuration time.Duration
+
+	// MaxHistory is the maximum number of completed window snapshots to
+	// retain in memory. When the limit is exceeded, the oldest snapshots are
+	// dropped. AllTimeSnapshot() reflects only the retained history.
+	// 0 means no limit (retain all windows).
+	MaxHistory int
 }
 
 // Collector accumulates DNS statistics from dnstap messages.
 // It is safe for concurrent use from a single writer goroutine
 // plus multiple reader goroutines.
+//
+// AllTimeSnapshot is computed by aggregating all retained history snapshots
+// plus the current in-progress window. When MaxHistory is set, old snapshots
+// are evicted and AllTimeSnapshot reflects only the retained period.
 type Collector struct {
 	mu       sync.Mutex
 	opts     CollectorOptions
 	current  *window
 	history  []*Snapshot
-	allTime  *window
 	lastTime time.Time // timestamp of the last recorded message (zero = not yet seen)
 }
 
@@ -99,11 +108,10 @@ func messageTime(msg *dnstap.Message) time.Time {
 	return time.Time{}
 }
 
-// Record records a single dnstap message into the current window and
-// the all-time accumulator. The dnsMsg parameter should be the already-
-// unpacked DNS message from EvalContext to avoid redundant unpacking.
-// If dnsMsg is nil, the message is still counted but DNS-level fields
-// (qname, qtype, rcode) are not recorded.
+// Record records a single dnstap message into the current window.
+// The dnsMsg parameter should be the already-unpacked DNS message from
+// EvalContext to avoid redundant unpacking. If dnsMsg is nil, the message
+// is still counted but DNS-level fields (qname, qtype, rcode) are not recorded.
 //
 // When CollectorOptions.WindowDuration > 0, Record automatically rotates
 // the current window whenever the message timestamp crosses a window
@@ -115,14 +123,13 @@ func (c *Collector) Record(msg *dnstap.Message, dnsMsg *dns.Msg) {
 
 	t := messageTime(msg)
 	if !t.IsZero() {
-		// Initialise windows lazily on the first message with a timestamp.
+		// Initialise the current window lazily on the first message with a timestamp.
 		if c.current == nil {
 			start := t.Truncate(c.opts.WindowDuration)
 			if c.opts.WindowDuration <= 0 {
 				start = t
 			}
 			c.current = newWindow(start)
-			c.allTime = newWindow(start)
 		}
 		c.lastTime = t
 
@@ -136,22 +143,19 @@ func (c *Collector) Record(msg *dnstap.Message, dnsMsg *dns.Msg) {
 				c.current = newWindow(windowEnd)
 				windowEnd = c.current.start.Add(c.opts.WindowDuration)
 			}
+			c.trimHistory()
 		}
 	} else if c.current == nil {
 		// No timestamp at all: fall back to wall clock.
-		now := time.Now()
-		c.current = newWindow(now)
-		c.allTime = newWindow(now)
+		c.current = newWindow(time.Now())
 	}
 
 	c.current.totalFrames++
-	c.allTime.totalFrames++
 
 	// Client IP from QueryAddress.
 	if msg.QueryAddress != nil {
 		ip := c.normalizeIP(msg.QueryAddress)
 		c.current.clientIPs[ip]++
-		c.allTime.clientIPs[ip]++
 	}
 
 	if dnsMsg == nil {
@@ -162,11 +166,9 @@ func (c *Collector) Record(msg *dnstap.Message, dnsMsg *dns.Msg) {
 	if len(dnsMsg.Question) > 0 {
 		qname := c.normalizeDomain(dnsMsg.Question[0].Name)
 		c.current.domains[qname]++
-		c.allTime.domains[qname]++
 
 		qtype := dnsMsg.Question[0].Qtype
 		c.current.qtypes[qtype]++
-		c.allTime.qtypes[qtype]++
 	}
 
 	// Response code (only meaningful for responses, but we record it
@@ -174,7 +176,6 @@ func (c *Collector) Record(msg *dnstap.Message, dnsMsg *dns.Msg) {
 	if msg.Type != nil && isResponseType(*msg.Type) {
 		rcode := dnsMsg.Rcode
 		c.current.rcodes[rcode]++
-		c.allTime.rcodes[rcode]++
 	}
 }
 
@@ -210,6 +211,7 @@ func (c *Collector) normalizeIP(rawIP []byte) string {
 // It is called by StatsOutput on ticker ticks (wall-clock rotation) or at
 // close time. When message timestamps are available, the window end time
 // is taken from the last recorded message rather than the wall clock.
+// Old snapshots exceeding MaxHistory are evicted after rotation.
 func (c *Collector) Rotate() *Snapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -217,23 +219,108 @@ func (c *Collector) Rotate() *Snapshot {
 	end := c.effectiveNow()
 	if c.current == nil {
 		c.current = newWindow(end)
-		c.allTime = newWindow(end)
 	}
 	snap := c.current.snapshot(end, c.opts.TopN)
 	c.history = append(c.history, snap)
+	c.trimHistory()
 	c.current = newWindow(end)
 	return snap
 }
 
-// AllTimeSnapshot returns a snapshot of the cumulative statistics.
+// trimHistory drops the oldest snapshots when MaxHistory is exceeded.
+// Must be called with c.mu held.
+func (c *Collector) trimHistory() {
+	if c.opts.MaxHistory > 0 && len(c.history) > c.opts.MaxHistory {
+		c.history = c.history[len(c.history)-c.opts.MaxHistory:]
+	}
+}
+
+// AllTimeSnapshot returns a snapshot computed by aggregating all retained
+// history snapshots plus the current in-progress window. When MaxHistory is
+// set and old snapshots have been evicted, this reflects only the retained
+// period rather than the full program lifetime.
 func (c *Collector) AllTimeSnapshot() *Snapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	if c.allTime == nil {
-		now := time.Now()
-		return newWindow(now).snapshot(now, c.opts.TopN)
+	return c.aggregateAllTime()
+}
+
+// aggregateAllTime builds a synthetic all-time snapshot by merging all
+// retained history snapshots and the current in-progress window.
+// Must be called with c.mu held.
+func (c *Collector) aggregateAllTime() *Snapshot {
+	var total uint64
+	domains := make(map[string]uint64)
+	qtypes := make(map[string]uint64)
+	rcodes := make(map[string]uint64)
+	clientIPs := make(map[string]uint64)
+
+	var start, end time.Time
+
+	// Aggregate from completed (retained) history windows.
+	for _, snap := range c.history {
+		if start.IsZero() || snap.Start.Before(start) {
+			start = snap.Start
+		}
+		if snap.End.After(end) {
+			end = snap.End
+		}
+		total += snap.TotalFrames
+		// TopDomains and ClientIPs are top-N per window; merging gives an
+		// approximation (entries below top-N in a window may be missing).
+		for _, e := range snap.TopDomains {
+			domains[e.Key] += e.Count
+		}
+		// QtypeDist and RcodeDist contain all entries, so merge is exact.
+		for _, e := range snap.QtypeDist {
+			qtypes[e.Key] += e.Count
+		}
+		for _, e := range snap.RcodeDist {
+			rcodes[e.Key] += e.Count
+		}
+		for _, e := range snap.ClientIPs {
+			clientIPs[e.Key] += e.Count
+		}
 	}
-	return c.allTime.snapshot(c.effectiveNow(), c.opts.TopN)
+
+	// Add the current in-progress window (exact raw map data).
+	now := c.effectiveNow()
+	if c.current != nil {
+		if start.IsZero() {
+			start = c.current.start
+		}
+		if now.After(end) {
+			end = now
+		}
+		total += c.current.totalFrames
+		for k, v := range c.current.domains {
+			domains[k] += v
+		}
+		for qt, v := range c.current.qtypes {
+			qtypes[qtypeString(qt)] += v
+		}
+		for rc, v := range c.current.rcodes {
+			rcodes[rcodeString(rc)] += v
+		}
+		for k, v := range c.current.clientIPs {
+			clientIPs[k] += v
+		}
+	}
+
+	if start.IsZero() {
+		start = now
+		end = now
+	}
+
+	return &Snapshot{
+		Start:       start,
+		End:         end,
+		TotalFrames: total,
+		TopDomains:  rankTopN(domains, c.opts.TopN),
+		QtypeDist:   rankAllStrings(qtypes),
+		RcodeDist:   rankAllStrings(rcodes),
+		ClientIPs:   rankTopN(clientIPs, c.opts.TopN),
+	}
 }
 
 // effectiveNow returns the last message timestamp if available, otherwise
@@ -250,7 +337,7 @@ func (c *Collector) WindowDuration() time.Duration {
 	return c.opts.WindowDuration
 }
 
-// History returns a copy of the completed window snapshots.
+// History returns a copy of the retained completed window snapshots.
 func (c *Collector) History() []*Snapshot {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -295,6 +382,11 @@ func rankAll[K comparable](m map[K]uint64, keyStr func(K) string) []RankedEntry 
 		return entries[i].Key < entries[j].Key
 	})
 	return entries
+}
+
+// rankAllStrings is a convenience wrapper around rankAll for string-keyed maps.
+func rankAllStrings(m map[string]uint64) []RankedEntry {
+	return rankAll[string](m, func(s string) string { return s })
 }
 
 // qtypeString returns the DNS type name for a given numeric qtype.

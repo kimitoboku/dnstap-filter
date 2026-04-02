@@ -38,6 +38,7 @@ type cliConfig struct {
 	statsDomainLabels int
 	statsSubnetPrefix int
 	statsWindow       time.Duration
+	statsMaxHistory   int
 }
 
 func parseCLIArgs(args []string) (cliConfig, error) {
@@ -56,6 +57,10 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 		"\t  collects Top-N domains, qtype/rcode distribution, client IP counts\n"+
 		"\t  uses 60-second time windows; report written on exit\n"+
 		"\t  example: stats:report.html  stats:report.json  stats:- (JSON to stdout)\n"+
+		"\tstats:<addr> - live Prometheus metrics + HTML dashboard over HTTP\n"+
+		"\t  serves /metrics (Prometheus) and / (HTML dashboard)\n"+
+		"\t  process stays alive after input ends until Ctrl+C\n"+
+		"\t  example: stats::9090  stats:localhost:9090\n"+
 		"\t(can be specified multiple times for fan-out to multiple destinations)\n"+
 		"\t(default: print \"<time> <Q|R> <name> <type> [<rcode>]\" to stdout)")
 	filterExpr := fs.String("filter", "", "filter expression (omit to match all)\n"+
@@ -101,6 +106,9 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 		"\texample: --stats-subnet-prefix=24 groups IPs into /24 subnets")
 	statsWindow := fs.Duration("stats-window", 60*time.Second, "time window interval for stats aggregation (default 60s)\n"+
 		"\texample: --stats-window=30s  --stats-window=5m")
+	statsMaxHistory := fs.Int("stats-max-history", 0, "maximum number of time windows to retain in memory (0 = unlimited)\n"+
+		"\told windows are evicted at rotation time; AllTimeSnapshot reflects only retained windows\n"+
+		"\texample: --stats-max-history=168  (keep 168 × 60s = ~2.8 hours)")
 
 	if err := fs.Parse(args); err != nil {
 		return cliConfig{}, err
@@ -113,6 +121,9 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 	}
 	if *speed < 0 {
 		return cliConfig{}, fmt.Errorf("flag --speed must be >= 0")
+	}
+	if *statsMaxHistory < 0 {
+		return cliConfig{}, fmt.Errorf("flag --stats-max-history must be >= 0")
 	}
 	if !*printFilterTree && *in == "" {
 		return cliConfig{}, fmt.Errorf("required flag: --in (or use --print-filter-tree)")
@@ -129,6 +140,7 @@ func parseCLIArgs(args []string) (cliConfig, error) {
 		statsDomainLabels: *statsDomainLabels,
 		statsSubnetPrefix: *statsSubnetPrefix,
 		statsWindow:       *statsWindow,
+		statsMaxHistory:   *statsMaxHistory,
 	}, nil
 }
 
@@ -200,9 +212,13 @@ func run(args []string) error {
 	}
 
 	// Separate stats specs from regular output specs.
+	// Also detect whether any stats output is an HTTP server so we can
+	// keep the process alive after input ends.
 	var collector *stats.Collector
 	var statsOuts []dnstap.Output
 	var regularSpecs []string
+	hasWebOutput := false
+
 	for _, spec := range cfg.outputSpecs {
 		if transport.IsStatsSpec(spec) {
 			if collector == nil {
@@ -211,17 +227,23 @@ func run(args []string) error {
 					DomainLabels:   cfg.statsDomainLabels,
 					SubnetPrefix:   cfg.statsSubnetPrefix,
 					WindowDuration: cfg.statsWindow,
+					MaxHistory:     cfg.statsMaxHistory,
 				})
 			}
 			addr, err := transport.StatsAddress(spec)
 			if err != nil {
 				return fmt.Errorf("output: %w", err)
 			}
-			so, err := transport.NewStatsOutput(collector, addr, cfg.statsWindow)
-			if err != nil {
-				return fmt.Errorf("output: %w", err)
+			if transport.IsListenAddr(addr) {
+				statsOuts = append(statsOuts, transport.NewStatsHTTPOutput(collector, addr))
+				hasWebOutput = true
+			} else {
+				so, err := transport.NewStatsOutput(collector, addr, cfg.statsWindow)
+				if err != nil {
+					return fmt.Errorf("output: %w", err)
+				}
+				statsOuts = append(statsOuts, so)
 			}
-			statsOuts = append(statsOuts, so)
 		} else {
 			regularSpecs = append(regularSpecs, spec)
 		}
@@ -272,15 +294,26 @@ func run(args []string) error {
 		close(inputDone)
 	}()
 
+	gotSignal := false
 	select {
 	case <-inputDone:
 		// Input finished normally (e.g. file/pcap EOF).
 	case <-sigCh:
 		// Signal received; proceed to graceful shutdown.
+		gotSignal = true
 	}
 
 	close(inputChannel)
 	<-filterDone
+
+	// When an HTTP stats server is active and input ended naturally (not via
+	// signal), keep the process alive so the web dashboard and /metrics
+	// endpoint remain accessible. Shut down only on the next signal.
+	if hasWebOutput && !gotSignal {
+		fmt.Fprintln(os.Stderr, "Input complete. Web server is still running. Press Ctrl+C to stop.")
+		<-sigCh
+	}
+
 	o.Close()
 
 	return nil
